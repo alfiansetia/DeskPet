@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { petWindowLogicalSize, measurePetContentHeight, resolveEffectiveScale, petWrapBox, PET_BASE_SCALE } from "./petWindow";
+import { petWindowLogicalSize, measurePetContentHeight, measurePetContentWidth, resolveEffectiveScale, petWrapBox, PET_BASE_SCALE } from "./petWindow";
 
 describe("resolveEffectiveScale (aset 50% @100%)", () => {
   it("skala dasar 0.5: 100% = setengah aset", () => {
@@ -69,11 +69,19 @@ describe("petWindowLogicalSize (blocking area dinamis)", () => {
       .toBe(166 + 28);
   });
 
-  it("bubble suhu menambah tinggi seperlunya (tumpuk di atas pill)", () => {
+  it("satu slot rotasi: mini+temp tersedia tetap satu cadangan pill", () => {
     const base = petWindowLogicalSize(1, { alert: false, mini: true, temp: false, timer: false });
     const stacked = petWindowLogicalSize(1, { alert: false, mini: true, temp: true, timer: false });
-    expect(stacked.height).toBe(base.height + 30);
+    expect(stacked.height).toBe(base.height);
     expect(stacked.width).toBe(base.width);
+  });
+
+  it("bubble suhu saja (tanpa mini) melebarkan window agar tidak kepotong samping", () => {
+    const tight = petWindowLogicalSize(1, { alert: false, mini: false, temp: false, timer: false });
+    const tempOnly = petWindowLogicalSize(1, { alert: false, mini: false, temp: true, timer: false });
+    expect(tempOnly.width).toBe(250);
+    expect(tempOnly.width).toBeGreaterThan(tight.width);
+    expect(tempOnly.height).toBe(tight.height + 38);
   });
 });
 
@@ -81,7 +89,7 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
   afterEach(() => vi.restoreAllMocks());
 
   function mockDom(o: {
-    petH?: number; speechH?: number; miniH?: number; tempH?: number; greetH?: number; statusH?: number; hasBubble?: boolean; hasStatus?: boolean;
+    petH?: number; stackH?: number; speechH?: number; miniH?: number; tempH?: number; greetH?: number; heartsH?: number; emoteH?: number; statusH?: number; hasBubble?: boolean; hasStatus?: boolean;
   }) {
     vi.spyOn(document, "querySelector").mockImplementation((sel: string) => {
       if (sel === ".dp-pet-wrap") {
@@ -90,14 +98,21 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
       if (sel === ".dp-root.has-bubble") return (o.hasBubble ? {} : null) as unknown as Element;
       if (sel === ".dp-root.has-status") return (o.hasStatus ? {} : null) as unknown as Element;
       const map: Record<string, number | undefined> = {
+        ".dp-pet-stack": o.stackH,
+        "[data-testid='pet-stack']": o.stackH,
         ".dp-root > .dp-speech": o.speechH,
         ".dp-root > .dp-bubble-mini": o.miniH,
         ".dp-root > .dp-bubble-temp": o.tempH,
         ".dp-pet-stack > .dp-greet": o.greetH,
+        "[data-testid='pet-stack'] > .dp-greet": o.greetH,
+        ".dp-pet-stack > .dp-hearts": o.heartsH,
+        "[data-testid='pet-stack'] > .dp-hearts": o.heartsH,
+        ".dp-pet-stack > .dp-micro-emote": o.emoteH,
+        "[data-testid='pet-stack'] > .dp-micro-emote": o.emoteH,
         ".dp-root > .dp-status": o.statusH,
       };
       const h = map[sel];
-      return (h ? { offsetHeight: h } : null) as unknown as Element;
+      return (h ? { offsetHeight: h, scrollWidth: h } : null) as unknown as Element;
     });
   }
 
@@ -132,14 +147,73 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
     expect(measurePetContentHeight(0.5)).toBe(6 + 20 + 2 + 23 + 2 + 64 + 10 + 8);
   });
 
+  it("tinggi pet dari box stack, bukan rect wrap ber-transform", () => {
+    // Browser: box stack 64, tapi rect wrap = 64 × scale 0.5 = 32.
+    // Kode lama pakai 32 -> window ~32px kependekan -> atas kepotong.
+    mockDom({ stackH: 64, petH: 32, tempH: 20, miniH: 23, hasBubble: true });
+    expect(measurePetContentHeight(0.5)).toBe(6 + 20 + 2 + 23 + 2 + 64 + 10 + 8);
+  });
+
+  it("slot atas + badge timer bawah muat semua (kasus badge + slot)", () => {
+    mockDom({ stackH: 64, petH: 32, miniH: 23, statusH: 22, hasBubble: true, hasStatus: true });
+    expect(measurePetContentHeight(0.5)).toBe(6 + 23 + 2 + 64 + 6 + 22 + 10 + 8);
+  });
   it("sapaan di atas tumpukan ikut dihitung (tidak kepotong window)", () => {
     mockDom({ petH: 64, tempH: 20, miniH: 23, greetH: 22, hasBubble: true });
     // napas + temp + mini + sapaan(22+6) + pet + padding + pengaman
     expect(measurePetContentHeight(0.5)).toBe(6 + 20 + 2 + 23 + 2 + 22 + 6 + 64 + 10 + 8);
   });
 
+  it("hati saat dielus mencadangkan travel animasi (+8, tidak kepotong)", () => {
+    mockDom({ petH: 64, heartsH: 18, hasBubble: true });
+    // napas + hati(18+8) + pet + padding + pengaman
+    expect(measurePetContentHeight(0.5)).toBe(6 + 18 + 8 + 64 + 10 + 8);
+  });
+
+  it("emote idle mencadangkan travel animasi (+26, tidak kepotong)", () => {
+    mockDom({ petH: 64, emoteH: 20, hasBubble: true });
+    // napas + emote(20+26) + pet + padding + pengaman
+    expect(measurePetContentHeight(0.5)).toBe(6 + 20 + 26 + 64 + 10 + 8);
+  });
+
   it("badge timer saja: konten dijangkar bawah (padding 10)", () => {
     mockDom({ petH: 128, statusH: 26, hasStatus: true });
     expect(measurePetContentHeight(1)).toBe(6 + 128 + 6 + 26 + 10 + 8);
+  });
+});
+
+describe("measurePetContentWidth (pill tidak kepotong samping)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function mockWidth(o: { speechW?: number; miniW?: number; tempW?: number; greetW?: number }) {
+    vi.spyOn(document, "querySelector").mockImplementation((sel: string) => {
+      const map: Record<string, number | undefined> = {
+        ".dp-root > .dp-speech": o.speechW,
+        ".dp-root > .dp-bubble-mini": o.miniW,
+        ".dp-root > .dp-bubble-temp": o.tempW,
+        ".dp-pet-stack, [data-testid='pet-stack']": undefined,
+        ".dp-pet-stack > .dp-greet": o.greetW,
+        "[data-testid='pet-stack'] > .dp-greet": o.greetW,
+        ".dp-root > .dp-status": undefined,
+      };
+      const w = map[sel];
+      return (w ? { offsetWidth: w, scrollWidth: w } : null) as unknown as Element;
+    });
+  }
+
+  it("tanpa konten: fallback dipakai apa adanya", () => {
+    mockWidth({});
+    expect(measurePetContentWidth(96)).toBe(96);
+  });
+
+  it("pill lebih lebar dari tebakan: window tumbuh secukupnya", () => {
+    mockWidth({ miniW: 300 });
+    // 300 + napas horizontal 24
+    expect(measurePetContentWidth(250)).toBe(324);
+  });
+
+  it("konten sempit tidak menyusutkan window (anti-flicker)", () => {
+    mockWidth({ tempW: 120 });
+    expect(measurePetContentWidth(250)).toBe(250);
   });
 });

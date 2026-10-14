@@ -145,7 +145,7 @@ export function PrayerView({ settings, setSettings, bump }: Props) {
       <label className="dp-check">
         <input type="checkbox" checked={settings.tempBubbleEnabled !== false}
           onChange={(e) => upd({ tempBubbleEnabled: e.target.checked })} />
-        Tampilkan bubble suhu di atas pet (menumpuk di atas pill sholat)
+        Tampilkan bubble suhu di atas pet (bergantian dengan pill sholat tiap 4 detik)
       </label>
       <div className="dp-row" style={{ alignItems: "center" }}>
         <label htmlFor="dp-prayer-before" className="dp-muted" style={{ minWidth: 120 }}>Ingatkan sebelum:</label>
@@ -221,7 +221,7 @@ export function PrayerView({ settings, setSettings, bump }: Props) {
           <div className="dp-muted">{loading ? "Memuat jadwal…" : "Belum ada jadwal."}</div>
         )}
       </div>
-      <div className="dp-muted">Bubble muncul di atas pet saat masuk waktu + H-{settings.prayerReminderMins} menit (jika &gt; 0). Klik bubble untuk menutup.</div>
+      <div className="dp-muted">Bubble muncul di atas pet saat masuk waktu + H-{settings.prayerReminderMins} menit (jika &gt; 0). Klik bubble untuk menutup. Pill/suhu bergantian dengan sapaan: disembunyikan sementara saat pet diklik/dielus.</div>
     </div>
   );
 }

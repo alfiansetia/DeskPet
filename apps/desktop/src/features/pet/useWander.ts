@@ -61,6 +61,36 @@ export function sideOf(cursorX: number, centerX: number): 1 | -1 {
   return cursorX >= centerX ? 1 : -1;
 }
 
+/** Indeks tepi layar: 0=atas, 1=kanan, 2=bawah, 3=kiri (searah jarum jam). */
+export type EdgeIndex = 0 | 1 | 2 | 3;
+
+/** Tepi terdekat dari posisi (x,y) terhadap bounds (untuk mode "edges"). */
+export function nearestEdge(x: number, y: number, b: WanderBounds): EdgeIndex {
+  const d = [y - b.minY, b.maxX - x, b.maxY - y, x - b.minX];
+  let best: EdgeIndex = 0;
+  for (let i = 1; i < 4; i++) if (d[i] < d[best]) best = i as EdgeIndex;
+  return best;
+}
+
+/** Titik acak di sepanjang tepi (mentok, bounds sudah sprite-aware).
+ *  sMin/sMax membatasi segmen tepi (0=ujung awal, 1=ujung akhir searah jarum
+ *  jam) — untuk mode keliling, batasi ke setengah dekat sudut bersama agar
+ *  garis jalan tetap di periferi, tidak melintas tengah layar.
+ *  Ujung tiap tepi (searah jarum jam): top: kiri->kanan, right: atas->bawah,
+ *  bottom: kanan->kiri, left: bawah->atas. */
+export function randomPointOnEdge(
+  edge: EdgeIndex, b: WanderBounds, sMin = 0, sMax = 1,
+): { x: number; y: number } {
+  const s = sMin + Math.random() * (sMax - sMin);
+  const spanX = b.maxX - b.minX, spanY = b.maxY - b.minY;
+  switch (edge) {
+    case 0: return { x: b.minX + s * spanX, y: b.minY };
+    case 1: return { x: b.maxX, y: b.minY + s * spanY };
+    case 2: return { x: b.maxX - s * spanX, y: b.maxY };
+    case 3: return { x: b.minX, y: b.maxY - s * spanY };
+  }
+}
+
 /** Padding sprite (CSS px) dari rect .dp-pet-wrap terhadap viewport window. */
 export function spritePads(
   vw: number, vh: number,
@@ -172,11 +202,16 @@ export function useWander({
   motionRef.current = reducedMotion;
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
+  // Kursor tepi untuk mode "edges": dipertahankan antar siklus agar jalan
+  // mengikuti keliling (tepi → tepi sebelahnya), di-reset tiap efek
+  // di-restart (ganti setting/jeda) agar sinkron ulang ke posisi nyata.
+  const edgeRef = useRef<EdgeIndex | null>(null);
 
   const blocked = petState === "sleep" || petState === "dragged";
 
   useEffect(() => {
     if (!enabled || reducedMotion || paused || blocked) return;
+    edgeRef.current = null; // sinkron ulang tepi dari posisi saat ini
     let cancelled = false;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -295,11 +330,13 @@ export function useWander({
         const dirPref = dirPrefRef.current;
 
         // Tentukan pola lintasan
-        let pattern: "horizontal" | "vertical" | "diagonal";
+        let pattern: "horizontal" | "vertical" | "diagonal" | "edges";
         if (dirPref === "horizontal") {
           pattern = "horizontal";
         } else if (dirPref === "vertical") {
           pattern = "vertical";
+        } else if (dirPref === "edges") {
+          pattern = "edges";
         } else {
           // Mode acak: 50% sweep kiri-kanan penuh, 30% sweep vertikal penuh, 20% diagonal silang
           const r = Math.random();
@@ -388,6 +425,31 @@ export function useWander({
               pace: leg2Pace,
             });
           }
+        } else if (pattern === "edges") {
+          // POLA PINGGIR (keliling tepi layar, acak tapi tetap di pinggir):
+          // dari tepi terdekat -> titik acak di tepi SEBELAHNYA (searah /
+          // berlawanan jarum jam, acak tiap siklus), lalu lanjut ke tepi
+          // sebelahnya lagi. Garis antar tepi bersebelahan memotong sudut —
+          // tetap di periferi, tidak pernah melintas tengah layar.
+          const b = { minX, maxX, minY, maxY };
+          const cur = edgeRef.current ?? nearestEdge(pos.x, pos.y, b);
+          const step: 1 | 3 = Math.random() < 0.5 ? 1 : 3; // 1=searah, 3=mundur (= -1 mod 4)
+          const next1 = ((cur + step) % 4) as EdgeIndex;
+          const next2 = ((next1 + step) % 4) as EdgeIndex;
+          const t1 = randomPointOnEdge(next1, b);
+          const t2 = randomPointOnEdge(next2, b);
+          legs.push({
+            targetX: t1.x,
+            targetY: t1.y,
+            pace: resolvePace(pacePref),
+            pauseAfterMs: rand(400, 700),
+          });
+          legs.push({
+            targetX: t2.x,
+            targetY: t2.y,
+            pace: resolvePace(pacePref),
+          });
+          edgeRef.current = next2;
         } else {
           // POLA DIAGONAL SILANG (Pojok ke Pojok Seberang MENTOK):
           const midX = (minX + maxX) / 2;

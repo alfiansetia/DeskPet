@@ -62,7 +62,7 @@ const K = {
 };
 
 export type WanderPace = "random" | "slow" | "normal" | "fast";
-export type WanderDirection = "random" | "horizontal" | "vertical";
+export type WanderDirection = "random" | "horizontal" | "vertical" | "edges";
 
 export interface DeskSettings {
   alwaysOnTop: boolean; reducedMotion: boolean;
@@ -130,7 +130,7 @@ export function normalizeSettings(raw: Partial<DeskSettings>): DeskSettings {
   const wanderPace = ["random", "slow", "normal", "fast"].includes(raw.wanderPace as string)
     ? (raw.wanderPace as WanderPace)
     : "random";
-  const wanderDirection = ["random", "horizontal", "vertical"].includes(raw.wanderDirection as string)
+  const wanderDirection = ["random", "horizontal", "vertical", "edges"].includes(raw.wanderDirection as string)
     ? (raw.wanderDirection as WanderDirection)
     : "random";
   const prayerReminderMins = typeof raw.prayerReminderMins === "number"

@@ -605,6 +605,7 @@ function SettingsView({ settings, setSettings, onCare }: { settings: DeskSetting
               <option value="random">Acak (Semua Arah)</option>
               <option value="horizontal">Kiri – Kanan (Patroli)</option>
               <option value="vertical">Atas – Bawah</option>
+              <option value="edges">Pinggir (Keliling Tepi Layar)</option>
             </select>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { clamp, previewBounds, shouldCenterPet, sideOf, spritePads, tauriBounds, useWander } from "./useWander";
+import { clamp, nearestEdge, previewBounds, randomPointOnEdge, shouldCenterPet, sideOf, spritePads, tauriBounds, useWander, type EdgeIndex } from "./useWander";
 
 describe("wander bounds (mentok tepi)", () => {
   it("clamp membatasi nilai ke rentang", () => {
@@ -83,6 +83,43 @@ describe("wander bounds (mentok tepi)", () => {
   });
 });
 
+describe("edges mode (keliling tepi layar)", () => {
+  const b = { minX: 0, maxX: 1000, minY: 0, maxY: 500 };
+
+  it("nearestEdge: tepi terdekat dari posisi", () => {
+    expect(nearestEdge(500, 10, b)).toBe(0); // dekat atas
+    expect(nearestEdge(990, 250, b)).toBe(1); // dekat kanan
+    expect(nearestEdge(500, 490, b)).toBe(2); // dekat bawah
+    expect(nearestEdge(10, 250, b)).toBe(3); // dekat kiri
+    expect(nearestEdge(500, 250, b)).toBe(0); // tengah: seri -> atas (urutan cek)
+  });
+
+  it("randomPointOnEdge: titik selalu mentok di tepinya", () => {
+    for (let i = 0; i < 50; i++) {
+      const edge = (i % 4) as EdgeIndex;
+      const p = randomPointOnEdge(edge, b);
+      if (edge === 0) { expect(p.y).toBe(b.minY); expect(p.x).toBeGreaterThanOrEqual(b.minX); expect(p.x).toBeLessThanOrEqual(b.maxX); }
+      if (edge === 1) { expect(p.x).toBe(b.maxX); expect(p.y).toBeGreaterThanOrEqual(b.minY); expect(p.y).toBeLessThanOrEqual(b.maxY); }
+      if (edge === 2) { expect(p.y).toBe(b.maxY); expect(p.x).toBeGreaterThanOrEqual(b.minX); expect(p.x).toBeLessThanOrEqual(b.maxX); }
+      if (edge === 3) { expect(p.x).toBe(b.minX); expect(p.y).toBeGreaterThanOrEqual(b.minY); expect(p.y).toBeLessThanOrEqual(b.maxY); }
+    }
+  });
+
+  it("tepi bersebelahan: langkah keliling tidak melintas tengah", () => {
+    // Dari titik mana pun di tepi 0 (atas), target di tepi 1/3 (samping):
+    // garisnya memotong sudut, titik tengah garis tetap di periferi
+    // (x dekat sisi atau y dekat sisi, tidak pernah di tengah dua-duanya).
+    const from = { x: 500, y: b.minY };
+    for (let i = 0; i < 50; i++) {
+      const next = (i % 2 === 0 ? 1 : 3) as EdgeIndex;
+      const t = randomPointOnEdge(next, b);
+      const mid = { x: (from.x + t.x) / 2, y: (from.y + t.y) / 2 };
+      const nearVertEdge = Math.min(mid.x - b.minX, b.maxX - mid.x) < 250;
+      const nearHorizEdge = Math.min(mid.y - b.minY, b.maxY - mid.y) < 125;
+      expect(nearVertEdge || nearHorizEdge).toBe(true);
+    }
+  });
+});
 describe("shouldCenterPet (fokus alert ke tengah)", () => {
   it("aktif default; mati bila user mematikan / panel terbuka", () => {
     expect(shouldCenterPet(true, false)).toBe(true);

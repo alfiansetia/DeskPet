@@ -25,7 +25,8 @@ import { randomGreeting } from "./features/pet/greetings";
 import { newlyUnlocked, validActiveHat } from "./features/pet/hats";
 import { decayStats, feedStats, needsCare, playStats } from "./features/pet/care";
 import { playPetSound } from "./lib/sfx";
-import { petWindowLogicalSize, measurePetContentHeight, resolveEffectiveScale, petWrapBox } from "./lib/petWindow";
+import { petWindowLogicalSize, measurePetContentHeight, measurePetContentWidth, resolveEffectiveScale, petWrapBox } from "./lib/petWindow";
+import { Bubble, SLOT_ROTATE_MS } from "./components/Bubble";
 import { keepWindowOnScreen } from "./lib/windowFit";
 
 /**
@@ -199,7 +200,8 @@ export default function App() {
   }, [settings.prayerCityId, settings.prayerCityName, settings.weatherEnabled]);
   weatherRef.current = weather;
 
-  // Reaksi cuaca: transisi kelompok cuaca -> emote + info sekali (tidak spam).
+  // Reaksi cuaca: transisi ke hujan -> emote + info sekali (tidak spam).
+  // Transisi ke cerah sengaja TANPA emote (mengganggu): cukup pill suhu.
   const wxGroupRef = useRef<string | null>(null);
   useEffect(() => {
     const g = weatherGroup(weather?.code);
@@ -209,13 +211,40 @@ export default function App() {
     if (g === "rain") {
       showEmote("☔");
       toast(`Hujan di ${weather?.cityLabel ?? "kotamu"}`, "Di dalam aja ya~", "info");
-    } else if (g === "clear") {
-      showEmote("😎");
     }
   }, [weather, settings.weatherEnabled, showEmote]);
+  // Rotasi slot ambient (suhu <-> countdown sholat): ganti isi tiap
+  // SLOT_ROTATE_MS bila keduanya tersedia. Tick jalan terus di background
+  // agar tidak ada lompatan saat salah satu baru tersedia.
+  const slotCount = (settings.weatherEnabled !== false && settings.tempBubbleEnabled !== false && weather ? 1 : 0)
+    + (settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay ? 1 : 0);
+  const [slotTick, setSlotTick] = useState(0);
+  useEffect(() => {
+    if (slotCount < 2) return;
+    const id = setInterval(() => setSlotTick((t) => t + 1), SLOT_ROTATE_MS);
+    return () => clearInterval(id);
+  }, [slotCount]);
+  // Slot ambient di atas pet: SATU isi dalam satu waktu, bergantian tiap
+  // SLOT_ROTATE_MS (suhu <-> countdown sholat) via komponen <Bubble>.
+  // Sapaan hasil interaksi (klik/elus) menyela slot sementara; slot lanjut
+  // setelah overlay hilang. Emote idle kecil tetap melayang di atas slot
+  // via --above agar pill tidak kedip-kedip.
+  // Ditaruh di sini (bukan di bawah) karena dipakai efek resize window.
+  const interactOverlay = alertBubble === null && panel === null && (petting || greet !== null);
+  const slotItems: Array<"temp" | "mini"> = [
+    ...(settings.weatherEnabled !== false && settings.tempBubbleEnabled !== false && weather ? ["temp" as const] : []),
+    ...(settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay ? ["mini" as const] : []),
+  ];
+  const slotCurrent = alertBubble === null && panel === null && !interactOverlay && slotItems.length > 0
+    ? slotItems[slotTick % slotItems.length]
+    : null;
+  // Satu slot = satu offset pill (26px) bila ada isi.
+  const aboveOffset = slotCurrent ? 26 : 0;
   const petScale = settings.petScale ?? 1;
   const effectiveScale = resolveEffectiveScale(petScale, alertEnlarged);
   const reserveAlert = alertBubble !== null;
+  // Reserve lebar mengikuti KETERSEDIAAN (stabil, anti-flicker saat rotasi),
+  // bukan isi yang sedang tampil.
   const reserveMini = !reserveAlert && settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay !== null && panel === null;
   const reserveTemp = !reserveAlert && settings.weatherEnabled !== false && settings.tempBubbleEnabled !== false && weather !== null && panel === null;
   const reserveTimer = timerLeft !== null && settings.timerBadgeEnabled !== false;
@@ -238,17 +267,26 @@ export default function App() {
           const guess = petWindowLogicalSize(effectiveScale, {
             alert: reserveAlert, mini: reserveMini, temp: reserveTemp, timer: reserveTimer,
           });
-          // Lebar final langsung dari tebakan (tetap, anti-flicker teks
-          // countdown tiap detik); tinggi dikoreksi dari hasil ukur DOM agar
-          // bubble sepanjang apa pun tidak kepotong.
+          // Lebar awal dari tebakan (anti-flicker teks countdown tiap detik),
+          // lalu dikoreksi dari hasil ukur DOM: tinggi agar bubble sepanjang
+          // apa pun tidak kepotong, lebar agar pill/sapaan tidak kepotong
+          // samping (temp-only dulu terjepit ~96px). Koreksi lebar dibatasi
+          // agar tidak menyusut di bawah tebakan (anti-kedip tiap detik).
           finalW = guess.width;
           finalH = guess.height;
           await w.setSize(new LogicalSize(finalW, finalH));
           await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
           if (cancelled) return;
+          const measuredW = measurePetContentWidth(guess.width);
+          // Window tidak boleh menyusut karena countdown ( narrower tiap detik
+          // -> flicker ): hanya tumbuh, susut hanya bila konten hilang
+          // (reserve berubah -> guess ikut berubah -> effect jalan ulang).
+          if (measuredW > finalW) finalW = measuredW;
           const height = measurePetContentHeight(effectiveScale);
           if (Math.abs(height - guess.height) > 2) {
             finalH = height;
+            await w.setSize(new LogicalSize(finalW, finalH));
+          } else if (finalW !== guess.width) {
             await w.setSize(new LogicalSize(finalW, finalH));
           }
         }
@@ -260,7 +298,7 @@ export default function App() {
       } catch { /* web preview uses CSS */ }
     })();
     return () => { cancelled = true; };
-  }, [panel, menu, effectiveScale, reserveAlert, reserveMini, reserveTemp, reserveTimer, alertBubble, greet !== null, petting, microEmote !== null]);
+  }, [panel, menu, effectiveScale, reserveAlert, reserveMini, reserveTemp, reserveTimer, alertBubble, slotCurrent, greet !== null, petting, microEmote !== null]);
 
   // Scheduler tick (PRD §5.2: DB = source of truth, no duplicate, missed handling)
   useEffect(() => {
@@ -652,7 +690,7 @@ export default function App() {
         break;
       }
       case "cycle-wander-dir": {
-        const dirs: WanderDirection[] = ["random", "horizontal", "vertical"];
+        const dirs: WanderDirection[] = ["random", "horizontal", "vertical", "edges"];
         const cur = settings.wanderDirection ?? "random";
         const next = dirs[(dirs.indexOf(cur) + 1) % dirs.length];
         setSettings((s) => ({ ...s, wanderDirection: next }));
@@ -660,6 +698,7 @@ export default function App() {
           random: "Acak (Semua Arah)",
           horizontal: "Kiri – Kanan (Patroli)",
           vertical: "Atas – Bawah",
+          edges: "Pinggir (Keliling Tepi)",
         };
         toast("Arah jalan diubah", names[next], "info");
         break;
@@ -820,21 +859,17 @@ export default function App() {
 
   // Countdown mini untuk bubble (re-render tiap detik via prayerTick).
   void prayerTick;
-  const miniNext = settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay && !panel
+  const miniNext = slotCurrent === "mini" && prayerDay
     ? getNextPrayer(prayerDay, new Date())
     : null;
-  // Bubble suhu menumpuk DI ATAS pill sholat; sembunyi saat alert/panel.
-  const tempBubble = !alertBubble && !panel && settings.weatherEnabled !== false
-    && settings.tempBubbleEnabled !== false && weather
-    ? weather
-    : null;
-  // Offset vertikal overlay mengambang (sapaan/hati/emote) agar menumpuk DI ATAS
-  // pill yang sedang tampil, bukan menabraknya. Pill diukur terpisah di bawah.
-  const aboveOffset = (tempBubble ? 26 : 0) + (miniNext ? 26 : 0);
+  const tempBubble = slotCurrent === "temp" ? weather : null;
 
   return (
     <div
-      className={`dp-root${panel ? " with-panel" : ""}${(alertBubble || miniNext || tempBubble) && !panel ? " has-bubble" : ""}${reserveTimer && !panel ? " has-status" : ""}`}
+      // has-bubble = ada konten di atas pet (pill/alert/overlay): jangkar ke
+      // bawah agar overlay absolute tidak kepotong tepi atas. Tanpa ini saat
+      // sapaan tampil sendirian layout center -> kepotong ~7px.
+      className={`dp-root${panel ? " with-panel" : ""}${(alertBubble || miniNext || tempBubble || interactOverlay || microEmote) && !panel ? " has-bubble" : ""}${reserveTimer && !panel ? " has-status" : ""}`}
       onContextMenu={onCtxMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -851,21 +886,21 @@ export default function App() {
           </button>
         </div>
       )}
-      {!alertBubble && tempBubble && (
-        <button className="dp-bubble-temp" data-testid="temp-bubble"
+      {!alertBubble && slotCurrent === "temp" && tempBubble && (
+        <Bubble position="top" testId="temp-bubble" className="dp-bubble-temp"
           onClick={() => openTab("prayer")}
           title="Klik untuk buka cuaca + jadwal sholat">
           <span className="dp-line"><Icon name={tempBubble.icon} size={12} /> {tempBubble.tempC}° {tempBubble.label}</span>
-        </button>
+        </Bubble>
       )}
-      {!alertBubble && miniNext && (
-        <button className="dp-bubble-mini" data-testid="prayer-mini"
+      {!alertBubble && slotCurrent === "mini" && miniNext && (
+        <Bubble position="top" testId="prayer-mini" className="dp-bubble-mini"
           onClick={() => openTab("prayer")}
           title="Klik untuk buka jadwal sholat">
           <span className="dp-line"><Icon name="moonStar" size={12} /> {miniNext.name} {timeOf(prayerDay!, miniNext.name)} · {formatCountdown(miniNext.at.getTime() - Date.now())}</span>
-        </button>
+        </Bubble>
       )}
-      <div style={{ ...petWrapBox(effectiveScale), position: "relative", ["--above" as string]: `${aboveOffset}px` }} data-testid="pet-stack">
+      <div className="dp-pet-stack" style={{ ...petWrapBox(effectiveScale), position: "relative", ["--above" as string]: `${aboveOffset}px` }} data-testid="pet-stack">
       <div
         className={`dp-pet-wrap${alertEnlarged ? " dp-alert" : ""}${idleAnimClass ? ` ${idleAnimClass}` : ""}${petting ? " dp-petting" : ""}`}
         style={backend === "web-preview"
@@ -900,8 +935,10 @@ export default function App() {
         />
       </div>
       {/* Overlay teks: hanya saat tidak ada alert (alert punya bubble sendiri).
-          Di layer stack TANPA flip agar tidak ikut kecermin (scaleX -1 di wrap). */}
-      {!alertBubble && microEmote && (
+          Di layer stack TANPA flip agar tidak ikut kecermin (scaleX -1 di wrap).
+          Hanya SATU overlay dalam satu waktu (prioritas: dielus > sapaan >
+          emote) agar tidak menumpuk di titik yang sama di atas kepala. */}
+      {!alertBubble && !petting && !greet && microEmote && (
         <span key={microEmote + Date.now()} className="dp-micro-emote" aria-hidden="true">
           {microEmote}
         </span>
@@ -911,7 +948,7 @@ export default function App() {
           <span>💕</span><span>💗</span><span>💖</span>
         </span>
       )}
-      {!alertBubble && greet && (
+      {!alertBubble && !petting && greet && (
         <span key={greet.key} className="dp-greet" data-testid="pet-greet" aria-hidden="true">
           {greet.text}
         </span>

@@ -1,7 +1,7 @@
 /** Regression: bubble suhu menumpuk DI ATAS pill sholat (urutan DOM),
  * keduanya sembunyi saat alert/panel. Toggle tempBubbleEnabled mengaturnya.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import App from "./App";
 import { toYMD } from "./features/prayer/prayer";
@@ -32,17 +32,26 @@ function seedPrayerAndWeather() {
 describe("App temp bubble stacking", () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 
-  it("suhu tampil di atas pill sholat (tumpuk vertikal)", async () => {
+  it("suhu dan countdown sholat bergantian tiap 4 detik (satu slot)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     seedPrayerAndWeather();
     render(<App />);
-    const temp = await screen.findByTestId("temp-bubble", undefined, { timeout: 3000 });
-    const mini = await screen.findByTestId("prayer-mini", undefined, { timeout: 3000 });
-    expect(temp.textContent).toContain("28°");
-    // urutan DOM = urutan tumpuk (flex kolom): suhu dulu, lalu pill sholat
-    const kids = Array.from(document.querySelector(".dp-root")!.children);
-    expect(kids.indexOf(temp)).toBeLessThan(kids.indexOf(mini));
-  });
+    // Tunggu salah satu muncul — dan pastikan tidak pernah berbarengan.
+    let first = "";
+    await waitFor(() => {
+      const t = document.querySelector("[data-testid='temp-bubble']");
+      const m = document.querySelector("[data-testid='prayer-mini']");
+      expect(t ?? m).not.toBeNull();
+      expect(t && m ? "bareng" : null).toBeNull();
+      first = t ? "temp-bubble" : "prayer-mini";
+    }, { timeout: 3000 });
+    const other = first === "temp-bubble" ? "prayer-mini" : "temp-bubble";
+    // Rotasi: yang lain muncul dan yang pertama ngalah (maks 8 dtk).
+    await waitFor(() => {
+      expect(document.querySelector(`[data-testid='${other}']`)).not.toBeNull();
+      expect(document.querySelector(`[data-testid='${first}']`)).toBeNull();
+    }, { timeout: 8000 });
+  }, 15000);
 
   it("toggle mati menyembunyikan bubble suhu saja", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
@@ -53,13 +62,17 @@ describe("App temp bubble stacking", () => {
     expect(document.querySelector("[data-testid='temp-bubble']")).toBeNull();
   });
 
-  it("offset sapaan mengikuti tumpukan pill (--above 52px bila suhu+sholat)", async () => {
+  it("offset sapaan mengikuti slot pill (--above 26px bila slot terisi)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     seedPrayerAndWeather();
     render(<App />);
-    await screen.findByTestId("prayer-mini", undefined, { timeout: 3000 });
+    await waitFor(() => {
+      expect(
+        document.querySelector("[data-testid='temp-bubble']") ?? document.querySelector("[data-testid='prayer-mini']"),
+      ).not.toBeNull();
+    }, { timeout: 3000 });
     const stack = screen.getByTestId("pet-stack");
-    expect(stack.style.getPropertyValue("--above")).toBe("52px");
+    expect(stack.style.getPropertyValue("--above")).toBe("26px");
   });
 
   it("tanpa pill, offset sapaan nol", async () => {
@@ -68,5 +81,34 @@ describe("App temp bubble stacking", () => {
     await screen.findByTestId("drag-region");
     const stack = screen.getByTestId("pet-stack");
     expect(stack.style.getPropertyValue("--above")).toBe("0px");
+  });
+
+  it("sapaan menyela slot sementara (gantian: tidak menumpuk, tidak kepotong)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    seedPrayerAndWeather();
+    render(<App />);
+    await waitFor(() => {
+      expect(
+        document.querySelector("[data-testid='temp-bubble']") ?? document.querySelector("[data-testid='prayer-mini']"),
+      ).not.toBeNull();
+    }, { timeout: 3000 });
+    // Klik pet (tanpa geser = bukan drag) -> sapaan muncul
+    const drag = screen.getByTestId("drag-region");
+    fireEvent.mouseDown(drag, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.mouseUp(drag, { button: 0, clientX: 100, clientY: 100 });
+    await screen.findByTestId("pet-greet", undefined, { timeout: 3000 });
+    // Selama sapaan tampil, slot ngalah (satu slot, tidak tumpuk)
+    expect(document.querySelector("[data-testid='temp-bubble']")).toBeNull();
+    expect(document.querySelector("[data-testid='prayer-mini']")).toBeNull();
+    expect(screen.getByTestId("pet-stack").style.getPropertyValue("--above")).toBe("0px");
+    // ...tapi layout tetap dijangkar bawah (tidak center -> tidak kepotong atas)
+    expect(document.querySelector(".dp-root.has-bubble")).not.toBeNull();
+    // Sapaan hilang ~2,6 dtk -> slot kembali (salah satu isi)
+    await waitFor(
+      () => expect(
+        document.querySelector("[data-testid='temp-bubble']") ?? document.querySelector("[data-testid='prayer-mini']"),
+      ).not.toBeNull(),
+      { timeout: 6000 },
+    );
   });
 });

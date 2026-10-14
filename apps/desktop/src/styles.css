@@ -202,11 +202,10 @@ html, body, #root {
   .dp-pet, .dp-pet * { animation: none !important; transition: none !important; }
 }
 
-/* Catatan: JANGAN tambah transition transform di sini. Skala wrap dipakai
-   sebagai pengukur ukuran window (measurePetContentHeight): transisi bikin
-   getBoundingClientRect terbaca di tengah animasi -> window terukur
-   kekecilan -> label bawah nyempil kepotong. Flip kiri/kanan juga harus
-   instan (transisi bikin sprite "menyapu" lewat scaleX 0). */
+/* Catatan: JANGAN tambah transition transform di sini. Flip kiri/kanan harus
+   instan (transisi bikin sprite "menyapu" lewat scaleX 0). Pengukur tinggi
+   window (measurePetContentHeight) membaca box .dp-pet-stack yang tidak kena
+   transform, jadi transisi tidak merusak pengukuran. */
 .dp-pet-wrap:active { cursor: grabbing; }
 /* Saat ada pesan penting: pet membesar 200% (via effectiveScale) + glow emas */
 .dp-pet-wrap.dp-alert { cursor: pointer; }
@@ -254,8 +253,11 @@ html, body, #root {
 
 /* Expandable panel */
 .dp-root.with-panel { justify-content: flex-start; padding-top: 8px; }
-/* Bubble menempel tepat di atas pet: konten dijangkarkan ke bawah jendela
-   (tanpa ini bubble+pet di tengah vertikal sehingga ada space kosong di atas). */
+/* Bubble/overlay menempel tepat di atas pet: konten dijangkarkan ke bawah
+   jendela (tanpa ini bubble+pet di tengah vertikal sehingga ada space kosong
+   di atas). Berlaku juga saat overlay tampil sendirian (sapaan/hati/emote
+   tanpa pill): overlay itu absolute, kalau layout center dia kepotong tepi
+   atas ~7px. */
 .dp-root.has-bubble:not(.with-panel) { justify-content: flex-end; padding-bottom: 10px; }
 /* Badge timer di bawah pet juga dijangkarkan ke bawah: kalau window kurang
    tinggi sesaat (mis. di tengah transisi ukuran), yang kepotong sisa napas
@@ -418,6 +420,27 @@ html, body, #root {
   -webkit-app-region: no-drag;
 }
 .dp-bubble-temp:hover { border-color: var(--dp-primary); }
+
+/* ── Bubble serbaguna (components/Bubble.tsx) ─────────────────────────────── */
+/* Base: reset app-region + kursor. Visual ikut variant + kelas legacy
+   (dp-bubble-temp / dp-bubble-mini / dp-speech) agar pengukuran lama tetap jalan. */
+.dp-bubble { -webkit-app-region: no-drag; }
+.dp-bubble--pill { margin-bottom: 2px; }
+/* top/bottom: ikut alur flex kolom (urutan DOM = urutan tumpuk). */
+.dp-bubble--top { order: 0; }
+.dp-bubble--bottom { order: 10; margin-bottom: 0; margin-top: 6px; }
+/* left/right: melayang di sisi jangkar — butuh wrapper position:relative
+   (mis. .dp-pet-stack). Lebar window untuk sisi ini dicadangkan manual. */
+.dp-bubble--left, .dp-bubble--right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+  max-width: 200px;
+  z-index: 29;
+}
+.dp-bubble--left { right: calc(100% + 8px); }
+.dp-bubble--right { left: calc(100% + 8px); }
 
 /* Sapaan teks di atas kepala (di atas pill bila ada, via --above di stack) */
 .dp-greet { position: absolute; bottom: calc(100% + 6px + var(--above, 0px)); left: 50%; transform: translateX(-50%); white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; background: #fff; border: 1px solid rgba(34,34,58,0.12); border-radius: 999px; padding: 2px 10px; font-size: 11px; font-weight: 700; color: var(--dp-text); box-shadow: 0 4px 12px rgba(34,34,58,0.15); pointer-events: none; z-index: 26; animation: dp-pop 180ms ease; }

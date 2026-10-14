@@ -74,6 +74,7 @@ export function PetContextMenu(props: Props) {
         random: "Acak",
         horizontal: "Kiri-Kanan",
         vertical: "Atas-Bawah",
+        edges: "Pinggir",
       };
       return dirLabels[props.wanderDirection ?? "random"] ?? "Acak";
     }
