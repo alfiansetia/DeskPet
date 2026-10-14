@@ -1,10 +1,10 @@
-//! P1 privacy + display defaults (PRD §9). Local-first, no telemetry.
+//! Privacy + display defaults (PRD §9). Local-first, no telemetry.
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppSettings {
-    /// Telemetry is ALWAYS off in P1; no opt-in path exists yet.
+    /// Telemetry is ALWAYS off; no opt-in path exists (PRD §9 must-have).
     pub telemetry_enabled: bool,
     pub always_on_top: bool,
     pub reduced_motion: bool,
@@ -12,7 +12,19 @@ pub struct AppSettings {
     pub speech_muted: bool,
     pub click_through_when_idle: bool,
     pub character_id: String,
+    #[serde(default = "default_true")]
+    pub wander_enabled: bool,
+    #[serde(default = "default_true")]
+    pub quiet_hours_enabled: bool,
+    #[serde(default = "default_quiet_start")]
+    pub quiet_start: u8,
+    #[serde(default = "default_quiet_end")]
+    pub quiet_end: u8,
 }
+
+fn default_true() -> bool { true }
+fn default_quiet_start() -> u8 { 22 }
+fn default_quiet_end() -> u8 { 7 }
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -24,6 +36,10 @@ impl Default for AppSettings {
             speech_muted: false,
             click_through_when_idle: false,
             character_id: "deskpet.cat.lavender".to_string(),
+            wander_enabled: true,
+            quiet_hours_enabled: true,
+            quiet_start: 22,
+            quiet_end: 7,
         }
     }
 }

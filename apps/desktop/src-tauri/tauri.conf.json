@@ -16,11 +16,13 @@
         "title": "DeskPet",
         "width": 220,
         "height": 220,
+        "minWidth": 220,
+        "minHeight": 220,
         "transparent": true,
         "decorations": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "resizable": false,
+        "resizable": true,
         "shadow": false,
         "acceptFirstMouse": true
       }

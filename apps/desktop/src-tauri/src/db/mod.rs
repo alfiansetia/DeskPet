@@ -14,8 +14,9 @@ pub enum DbError {
     Io(#[from] std::io::Error),
 }
 
-/// P1 initial schema. Mirrors PRD §8 sketch (subset needed for foundation).
+/// P1 initial schema + P2–P4 additions (PRD §8 full). Idempotent, ordered.
 pub const MIGRATION_001: &str = include_str!("../../migrations/001_init.sql");
+pub const MIGRATION_002: &str = include_str!("../../migrations/002_actions.sql");
 
 /// Open (creating parent dirs) and migrate a SQLite file.
 pub fn open_and_migrate(path: &Path) -> Result<Connection, DbError> {
@@ -28,6 +29,7 @@ pub fn open_and_migrate(path: &Path) -> Result<Connection, DbError> {
     // Privacy: no sensitive content in logs; keep pragmas conservative.
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     conn.execute_batch(MIGRATION_001)?;
+    conn.execute_batch(MIGRATION_002)?;
     Ok(conn)
 }
 
@@ -35,6 +37,7 @@ pub fn open_and_migrate(path: &Path) -> Result<Connection, DbError> {
 pub fn open_in_memory() -> Result<Connection, DbError> {
     let conn = Connection::open_in_memory()?;
     conn.execute_batch(MIGRATION_001)?;
+    conn.execute_batch(MIGRATION_002)?;
     Ok(conn)
 }
 
@@ -58,7 +61,7 @@ mod tests {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        for expected in ["reminders", "todos", "notes", "app_settings"] {
+        for expected in ["reminders", "todos", "notes", "app_settings", "action_audit", "scheduled_jobs", "integrations", "calendar_events", "automations"] {
             assert!(tables.contains(&expected.to_string()), "missing {expected}: {tables:?}");
         }
     }
@@ -67,6 +70,7 @@ mod tests {
     fn migration_is_idempotent() {
         let conn = open_in_memory().unwrap();
         conn.execute_batch(MIGRATION_001).expect("re-run must succeed");
+        conn.execute_batch(MIGRATION_002).expect("re-run must succeed");
     }
 
     #[test]

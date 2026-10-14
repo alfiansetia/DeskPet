@@ -8,12 +8,18 @@
 
 ```text
 apps/desktop/              # Aplikasi Tauri 2 + React + TypeScript
-  src/                     # Komponen PetCanvas, state machine, App, CSS
-  src-tauri/               # Backend Rust: SQLite, pet state, settings, tray, window
+  src/                     # App shell, MainPanel, PetCanvas, state machine, wander, parser, stores
+    components/MainPanel.tsx   # Panel: asisten, pengingat, tugas, catatan, timer, kalender, auto, settings
+    features/pet/          # state machine + useWander + PetContextMenu (klik kanan)
+    features/assistant/    # parser NL deterministik ID/EN + validasi aksi
+    lib/                   # store (localStorage), time, notify, tts, storage
+  src-tauri/               # Backend Rust: SQLite, pet state, actions/permission, settings, tray, window
 assets/characters/         # Paket aset karakter (Lavender Cat spritesheets, SVG, manifest)
 docs/                      # Dokumentasi: architecture, build, privacy, testing
 .ai/                       # Panduan & rules pengembangan
 ```
+
+> Status PRD: P1 Foundation ✅ + inti P2–P4 lokal ✅ (pengingat berulang/snooze/quiet-hours, todos, notes autosave, timer, TTS, parser NL ID/EN, action registry + permission engine + audit di Rust, kalender lokal, otomatisasi terbatas, backup/restore). Google Calendar/Gmail tetap **opt-in stub** (belum terhubung — butuh OAuth + scope sempit, sengaja tidak auto-aktif demi privasi). Plugin dinamis ditunda per PRD (hanya modul first-party statis).
 
 ---
 
@@ -56,15 +62,11 @@ Buka browser di [http://localhost:1420](http://localhost:1420). Status bar akan 
 
 ## 🎮 Kontrol & Interaksi Karakter
 
-- **Drag & Drop**: Klik kiri tahan pada karakter pet untuk memindahkannya ke posisi mana pun di desktop.
-- **Interaksi / Reaksi**: Klik (tap) pada karakter pet untuk memicu animasi gembira (`react`).
-- **Sembunyikan / Tampilkan (Hide/Show)**:
-  - Tombol **Hide / Show** pada menu cepat.
-  - Shortcut keyboard: `Ctrl + Shift + D` (Windows) atau `Cmd + Shift + D` (macOS).
-  - Klik kanan pada ikon tray di taskbar/menu bar.
-- **Always on Top**: Tombol **Top:on/off** untuk mengatur apakah pet selalu berada di atas jendela lain.
-- **Reduced Motion**: Tombol **Motion:calm/full** untuk mode aksesibilitas (mematikan animasi cepat).
-- **Zzz / Wake**: Memasukkan pet ke mode tidur lelap atau membangunkannya kembali.
+- **Drag & Drop**: Klik kiri tahan + geser pada karakter untuk memindahkannya. Ada threshold 5px sehingga klik biasa tidak dikira drag (tidak bocor ke UI belakang).
+- **Sapa**: Klik (tap) pada pet memicu animasi gembira (`react`). Dobel-klik membuka panel Asisten.
+- **Menu klik kanan**: Klik kanan pada pet membuka menu konteks (Asisten, Pengingat, Tugas, Catatan, Timer, Kalender, Otomatisasi, Pengaturan, jalan otomatis, selalu-di-atas, gerakan tenang, tidur/bangun, sembunyikan, keluar). Tidak ada lagi bar opsi permanen di bawah pet.
+- **Jalan otomatis**: Pet berjalan sendiri tiap 5–11 detik (state `walk` + jendela berpindah, sprite menghadap arah jalan). Bisa dimatikan via menu / Pengaturan. Otomatis jeda saat menu/panel terbuka, saat di-drag, tidur, atau reduced-motion.
+- **Sembunyikan / Tampilkan**: via menu klik kanan → 🙈, tray (Show/Hide), atau shortcut `Ctrl + Shift + D` (Windows) / `Cmd + Shift + D` (macOS).
 
 ---
 

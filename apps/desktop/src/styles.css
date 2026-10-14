@@ -29,13 +29,12 @@ html, body, #root {
   background: transparent;
 }
 
-/* Drag region covers the pet; buttons opt out with data-tauri-drag-region="false" semantics. */
-.dp-drag {
-  -webkit-app-region: drag;
-  cursor: grab;
-}
-.dp-drag:active { cursor: grabbing; }
-.dp-nodrag { -webkit-app-region: no-drag; }
+/* Pet is dragged MANUALLY via getCurrentWindow().startDragging() (see App.tsx).
+   Never use `-webkit-app-region: drag` here: on Windows a drag region is hit-tested
+   as HTCAPTION (title-bar), so right-click opens the OS system menu
+   (Restore/Move/Exit) and the webview never receives the contextmenu event. */
+.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; }
+.dp-pet-wrap:active { cursor: grabbing; }
 
 /* Placeholder pastel cat */
 .dp-pet {
@@ -105,17 +104,67 @@ html, body, #root {
   .dp-pet, .dp-pet * { animation: none !important; transition: none !important; }
 }
 
-/* Quick menu */
-.dp-menu { display: flex; gap: 6px; margin-top: 10px; }
-.dp-menu button {
+.dp-pet-wrap { -webkit-app-region: drag; cursor: grab; }
+.dp-pet-wrap:active { cursor: grabbing; }
+.dp-hidden { background: rgba(255,255,255,0.9); border-radius: 12px; }
+
+/* Right-click context menu */
+.dp-ctx-backdrop { position: fixed; inset: 0; z-index: 40; background: transparent; }
+.dp-ctx {
+  position: fixed; z-index: 50; width: 240px;
+  background: rgba(255,255,255,0.98); border: 1px solid rgba(34,34,58,0.12);
+  border-radius: 14px; box-shadow: 0 16px 40px rgba(34,34,58,0.25);
+  padding: 6px; max-height: calc(100vh - 16px); overflow: auto;
   -webkit-app-region: no-drag;
-  border: 1px solid rgba(34, 34, 58, 0.12);
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--dp-text);
-  border-radius: 10px;
-  padding: 4px 10px;
-  font-size: 12px;
-  cursor: pointer;
 }
-.dp-menu button:focus-visible { outline: 2px solid var(--dp-primary); outline-offset: 2px; }
-.dp-status { margin-top: 6px; font-size: 11px; color: var(--dp-muted); background: rgba(255,255,255,0.8); border-radius: 8px; padding: 2px 8px; }
+.dp-ctx-title { font-size: 11px; color: var(--dp-muted); padding: 4px 8px 6px; }
+.dp-ctx-item {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  border: 0; background: transparent; border-radius: 8px;
+  padding: 5px 8px; font-size: 13px; color: var(--dp-text); cursor: pointer; text-align: left;
+}
+.dp-ctx-item:hover { background: #efedff; }
+.dp-ctx-check { width: 16px; color: var(--dp-primary-dark); }
+.dp-ctx-hint { margin-left: auto; font-size: 11px; color: var(--dp-muted); }
+.dp-ctx-sep { height: 1px; background: rgba(34,34,58,0.1); margin: 4px 6px; }
+
+/* Expandable panel */
+.dp-root.with-panel { justify-content: flex-start; padding-top: 8px; }
+.dp-panel {
+  -webkit-app-region: no-drag;
+  margin-top: 8px; width: 384px; max-width: calc(100vw - 16px); max-height: 400px;
+  background: rgba(255,255,255,0.98); border-radius: 16px;
+  border: 1px solid rgba(34,34,58,0.12); box-shadow: 0 16px 40px rgba(34,34,58,0.25);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.dp-panel-head { display: flex; align-items: center; border-bottom: 1px solid rgba(34,34,58,0.1); padding: 4px; }
+.dp-tabs { display: flex; gap: 2px; flex: 1; }
+.dp-tab { border: 0; background: transparent; border-radius: 8px; padding: 6px 8px; font-size: 15px; cursor: pointer; }
+.dp-tab.on { background: #efedff; }
+.dp-x { border: 0; background: transparent; cursor: pointer; padding: 6px 10px; border-radius: 8px; }
+.dp-panel-body { padding: 10px 12px; overflow: auto; font-size: 13px; color: var(--dp-text); }
+.dp-muted { color: var(--dp-muted); font-size: 12px; }
+.dp-row { display: flex; gap: 6px; margin: 6px 0; }
+.dp-in { flex: 1; border: 1px solid rgba(34,34,58,0.15); border-radius: 10px; padding: 6px 10px; font-size: 13px; min-width: 0; }
+.dp-area { width: 100%; min-height: 140px; border: 1px solid rgba(34,34,58,0.15); border-radius: 10px; padding: 8px; font-size: 13px; resize: vertical; }
+.dp-btn { border: 1px solid rgba(34,34,58,0.15); background: #fff; border-radius: 10px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.dp-btn.primary { background: var(--dp-primary); border-color: var(--dp-primary); color: #fff; }
+.dp-btn.sm { padding: 3px 8px; font-size: 12px; }
+.dp-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.dp-item { display: flex; justify-content: space-between; gap: 8px; align-items: center; border: 1px solid rgba(34,34,58,0.1); border-radius: 10px; padding: 6px 8px; background: #fafaff; }
+.dp-item.clickable { cursor: pointer; width: 100%; text-align: left; font-size: 13px; }
+.dp-item.sel { border-color: var(--dp-primary); }
+.dp-confirm { background: #fff8e6; border: 1px solid #e9a23b; border-radius: 10px; padding: 8px; margin: 6px 0; }
+.dp-warn { background: #fff1f2; border: 1px solid #d95c69; border-radius: 10px; padding: 8px; margin: 6px 0; font-size: 12px; }
+.dp-log { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.dp-big { font-size: 32px; font-weight: 700; text-align: center; margin: 8px 0; }
+.dp-notes-grid { display: grid; grid-template-columns: 130px 1fr; gap: 8px; }
+.dp-check { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 13px; }
+.dp-settings { display: flex; flex-direction: column; gap: 2px; }
+
+/* Toasts */
+.dp-toasts { position: fixed; left: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 60; -webkit-app-region: no-drag; }
+.dp-toast { background: rgba(34,34,58,0.94); color: #fff; border-radius: 10px; padding: 6px 10px; font-size: 12px; max-width: 300px; }
+.dp-toast.reminder { background: #5c50b8; }
+.dp-toast.error { background: #d95c69; }
+.dp-toast.success { background: #3f9b78; }

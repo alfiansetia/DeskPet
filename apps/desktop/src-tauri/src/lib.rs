@@ -1,7 +1,8 @@
-//! DeskPet Tauri entry (P1 foundation).
+//! DeskPet Tauri entry (P1 foundation + P2–P4 local core).
 //! Transparent pet window + tray/menu-bar controls + SQLite init.
 //! Local-first: no network, no telemetry, no sensitive actions.
 
+pub mod actions;
 pub mod commands;
 pub mod db;
 pub mod pet;
@@ -86,6 +87,9 @@ pub fn run() {
             commands::settings_get,
             commands::settings_update,
             commands::app_health,
+            commands::action_validate,
+            commands::audit_log,
+            commands::app_quit,
         ])
         .setup(|app| {
             // Best-effort local DB init (local-first, no telemetry).
