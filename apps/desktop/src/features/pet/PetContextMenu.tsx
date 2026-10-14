@@ -34,8 +34,10 @@ export function PetContextMenu(props: Props) {
   const { x, y, onPick, onClose } = props;
   const w = 240;
   const h = ITEMS.length * 30 + 16;
-  const left = Math.min(x, window.innerWidth - w - 8);
-  const top = Math.min(y, window.innerHeight - h - 8);
+  const maxW = Math.max(window.innerWidth, 400);
+  const maxH = Math.max(window.innerHeight, 560);
+  const left = Math.max(8, Math.min(x, maxW - w - 8));
+  const top = Math.max(8, Math.min(y, maxH - h - 8));
 
   const check = (id: MenuAction): string => {
     if (id === "toggle-wander") return props.wanderEnabled ? "✓" : "";
@@ -47,8 +49,26 @@ export function PetContextMenu(props: Props) {
 
   return (
     <>
-      <div className="dp-ctx-backdrop" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
-      <div className="dp-ctx" role="menu" aria-label="DeskPet menu" style={{ left, top }} data-testid="pet-context-menu">
+      <div
+        className="dp-ctx-backdrop"
+        onClick={onClose}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }}
+      />
+      <div
+        className="dp-ctx"
+        role="menu"
+        aria-label="DeskPet menu"
+        style={{ left, top }}
+        data-testid="pet-context-menu"
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+      >
         <div className="dp-ctx-title">DeskPet · klik kanan</div>
         {ITEMS.map((it) => (
           <div key={it.id}>

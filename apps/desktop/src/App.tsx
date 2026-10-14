@@ -152,7 +152,7 @@ export default function App() {
 
   // Left-drag with click-vs-drag threshold (fixes accidental UI clicks)
   const onPetMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button === 2) return; // right button reserved for menu
+    if (e.button !== 0) return; // only left click initiates dragging, right click is for menu
     dragInfo.current = { sx: e.clientX, sy: e.clientY, dragging: false };
   }, []);
   const onPetMouseMove = useCallback((e: React.MouseEvent) => {
@@ -268,6 +268,7 @@ export default function App() {
         onMouseMove={onPetMouseMove}
         onMouseUp={onPetMouseUp}
         onDoubleClick={onDoubleClick}
+        onContextMenu={onCtxMenu}
         data-testid="drag-region"
         title="Drag kiri untuk pindah · klik = sapa · klik kanan = menu · dobel-klik = asisten"
       >
