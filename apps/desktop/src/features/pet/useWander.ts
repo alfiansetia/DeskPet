@@ -1,6 +1,6 @@
 /** Autonomous wander engine (PRD §5.1 "walk"). Moves the Tauri window; CSS fallback in preview. */
 import { useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import type { PetState } from "./petStateMachine";
 import type { WanderPace as WanderPacePref, WanderDirection as WanderDirectionPref } from "../../lib/store";
@@ -17,12 +17,11 @@ interface Opts {
   requestState: (s: PetState) => void;
 }
 
-interface MoveSegment {
-  dx: number;
-  dy: number;
+interface MoveLeg {
+  targetX: number;
+  targetY: number;
   pace: WalkPace;
   pauseAfterMs?: number;
-  pauseFacing?: 1 | -1;
 }
 
 function rand(min: number, max: number): number {
@@ -33,9 +32,9 @@ function resolvePace(pref: WanderPacePref): WalkPace {
   if (pref === "slow") return "slow";
   if (pref === "fast") return "fast";
   if (pref === "normal") return "normal";
-  // "random"
+  // "random": acak antara lari cepat, santai, dan normal
   const r = Math.random();
-  if (r < 0.40) return "fast";
+  if (r < 0.45) return "fast";
   if (r < 0.75) return "slow";
   return "normal";
 }
@@ -57,7 +56,7 @@ export function useWander({
   const reqRef = useRef(requestState);
   reqRef.current = requestState;
 
-  // Latest gating flags via refs so loop doesn't restart on self-triggered state changes
+  // Latest gating flags via refs
   const stateRef = useRef(petState);
   stateRef.current = petState;
   const enabledRef = useRef(enabled);
@@ -79,11 +78,10 @@ export function useWander({
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
     let isFirst = true;
-    const schedule = () => {
+    const schedule = (immediate = false) => {
       if (cancelled) return;
-      // Stroll pertama muncul cepat (1.5 - 2.8 detik) agar langsung terlihat,
-      // lalu bergantian setiap 3.5 - 6.5 detik
-      const delay = isFirst ? rand(1500, 2800) : rand(3500, 6500);
+      // Saat awal atau baru ganti settingan, langsung jalan dalam 700ms agar instan terasa!
+      const delay = immediate ? 250 : isFirst ? 700 : rand(3000, 6000);
       isFirst = false;
       idleTimer = setTimeout(() => { void executeWander(); }, delay);
     };
@@ -95,223 +93,240 @@ export function useWander({
       busy.current = true;
 
       try {
-        // 1. Tentukan posisi window & batas layar saat ini
+        // 1. Tentukan batas layar monitor fisik secara akurat (mentok sampai pinggir)
         let w: ReturnType<typeof getCurrentWindow> | null = null;
         let pos = { x: 500, y: 500 };
         let scale = 1;
-        let sw = 1920;
-        let sh = 1080;
+        let minX = 0;
+        let maxX = 1700;
+        let minY = 0;
+        let maxY = 850;
 
         try {
           w = getCurrentWindow();
           const p = await w.outerPosition();
           pos = { x: p.x, y: p.y };
           scale = await w.scaleFactor().catch(() => 1);
-          sw = (window.screen.availWidth || 1920) * scale;
-          sh = (window.screen.availHeight || 1080) * scale;
+          const mon = await currentMonitor().catch(() => null);
+          const petWindowSize = Math.round(220 * scale);
+          // Sprite kucing berukuran 128px di tengah window 220px -> ada 46px padding transparan di kiri, kanan, atas, bawah.
+          // Supaya badan kucing MENTOK ke pinggir layar, window digeser melewati tepi sejarak padding transparan tersebut.
+          const transparentPad = Math.round(46 * scale);
+
+          if (mon) {
+            minX = mon.position.x - transparentPad;
+            maxX = mon.position.x + mon.size.width - petWindowSize + transparentPad;
+            minY = mon.position.y - transparentPad;
+            maxY = mon.position.y + mon.size.height - petWindowSize + transparentPad - Math.round(48 * scale); // batas taskbar
+          } else {
+            const sw = (window.screen.availWidth || 1920) * scale;
+            const sh = (window.screen.availHeight || 1080) * scale;
+            minX = -transparentPad;
+            maxX = sw - petWindowSize + transparentPad;
+            minY = -transparentPad;
+            maxY = sh - petWindowSize + transparentPad - Math.round(48 * scale);
+          }
         } catch {
+          // Web preview mode (area browser)
           w = null;
+          const pw = Math.max(window.innerWidth || 800, 500);
+          const ph = Math.max(window.innerHeight || 600, 400);
+          minX = -Math.round(pw / 2) + 15;
+          maxX = Math.round(pw / 2) - 15;
+          minY = -Math.round(ph / 2) + 15;
+          maxY = Math.round(ph / 2) - 15;
+          pos = { x: offsetRef.current.x, y: offsetRef.current.y };
         }
 
-        // 2. Deteksi batas layar dan tentukan kelayakan arah gerak
-        let canGoLeft = true;
-        let canGoRight = true;
-        let canGoUp = true;
-        let canGoDown = true;
+        // Pastikan maxX > minX dan maxY > minY
+        if (maxX <= minX) maxX = minX + 500;
+        if (maxY <= minY) maxY = minY + 300;
 
-        if (w) {
-          const marginH = 180 * scale;
-          const marginV = 140 * scale;
-          canGoLeft = pos.x > marginH;
-          canGoRight = pos.x < sw - marginH - 240 * scale;
-          canGoUp = pos.y > marginV;
-          canGoDown = pos.y < sh - marginV - 240 * scale;
-        } else {
-          // Web preview mode boundaries
-          canGoLeft = offsetRef.current.x > -110;
-          canGoRight = offsetRef.current.x < 110;
-          canGoUp = offsetRef.current.y > -70;
-          canGoDown = offsetRef.current.y < 70;
-        }
-
-        const dirX = (canGoLeft && canGoRight)
-          ? (Math.random() > 0.5 ? 1 : -1)
-          : (canGoRight ? 1 : -1);
-
-        const dirY = (canGoUp && canGoDown)
-          ? (Math.random() > 0.5 ? 1 : -1)
-          : (canGoDown ? 1 : -1);
-
-        // 3. Bangun segmen pergerakan berdasarkan 2 parameter terpisah:
-        // Parameter 1: pacePrefRef.current ("random" | "slow" | "normal" | "fast")
-        // Parameter 2: dirPrefRef.current  ("random" | "horizontal" | "vertical")
+        // 2. Bangun lintasan ujung-ke-ujung (Desktop-wide Patrol mentok ke pinggir)
         const pacePref = pacePrefRef.current;
         const dirPref = dirPrefRef.current;
 
-        // Tentukan pola lintasan (trajectory)
-        let trajectory: "horizontal" | "vertical" | "zigzag" | "direct";
+        // Tentukan pola lintasan
+        let pattern: "horizontal" | "vertical" | "diagonal";
         if (dirPref === "horizontal") {
-          trajectory = "horizontal";
+          pattern = "horizontal";
         } else if (dirPref === "vertical") {
-          trajectory = "vertical";
+          pattern = "vertical";
         } else {
-          // Acak: campur antara horizontal, vertikal, zig-zag, dan jelajah langsung
-          const roll = Math.random();
-          if (roll < 0.35) trajectory = "horizontal";
-          else if (roll < 0.65) trajectory = "vertical";
-          else if (roll < 0.85) trajectory = "zigzag";
-          else trajectory = "direct";
+          // Mode acak: 50% sweep kiri-kanan penuh, 30% sweep vertikal penuh, 20% diagonal silang
+          const r = Math.random();
+          if (r < 0.50) pattern = "horizontal";
+          else if (r < 0.80) pattern = "vertical";
+          else pattern = "diagonal";
         }
 
-        const segments: MoveSegment[] = [];
+        const legs: MoveLeg[] = [];
 
-        if (trajectory === "horizontal") {
-          // Pola Kiri – Kanan (Patroli Horizontal Bolak-Balik)
-          const firstDirX = dirX;
-          const secondDirX = -firstDirX as (1 | -1);
-          const pace1 = resolvePace(pacePref);
-          const pace2 = resolvePace(pacePref);
+        if (pattern === "horizontal") {
+          // POLA KIRI – KANAN UJUNG KE UJUNG:
+          // Dari ujung desktop satu ke ujung desktop yang berlawanan MENTOK, berhenti sejenak, lalu balik lagi!
+          const midX = (minX + maxX) / 2;
+          const startsNearLeft = pos.x < midX;
 
-          segments.push({
-            dx: firstDirX * rand(90, 170),
-            dy: dirY * rand(5, 25),
-            pace: pace1,
-            pauseAfterMs: rand(450, 750),
-            pauseFacing: secondDirX, // Menoleh berbalik sebelum langkah kedua
-          });
-          segments.push({
-            dx: secondDirX * rand(100, 190),
-            dy: -dirY * rand(5, 25),
-            pace: pace2,
-          });
-        } else if (trajectory === "vertical") {
-          // Pola Atas – Bawah (Eksplorasi Vertikal Tegas)
-          const vertDirY = dirY;
-          const pace1 = resolvePace(pacePref);
+          const targetRightX = maxX; // MENTOK KE PINGGIR KANAN!
+          const targetLeftX = minX;  // MENTOK KE PINGGIR KIRI!
 
-          segments.push({
-            dx: (Math.random() > 0.5 ? 1 : -1) * rand(15, 45),
-            dy: vertDirY * rand(130, 220),
-            pace: pace1,
-            pauseAfterMs: rand(400, 650),
-          });
-          // Kemungkinan lanjut kembali atau langkah vertikal kedua
-          if (Math.random() > 0.4) {
-            const pace2 = resolvePace(pacePref);
-            segments.push({
-              dx: (Math.random() > 0.5 ? 1 : -1) * rand(20, 50),
-              dy: -vertDirY * rand(70, 130),
-              pace: pace2,
+          const leg1Pace = resolvePace(pacePref);
+          const leg2Pace = resolvePace(pacePref);
+
+          if (startsNearLeft) {
+            // Lari dari kiri menyeberang MENTOK ke ujung kanan desktop
+            legs.push({
+              targetX: targetRightX,
+              targetY: Math.min(maxY, Math.max(minY, pos.y)),
+              pace: leg1Pace,
+              pauseAfterMs: rand(550, 850), // Berhenti di ujung kanan, menoleh
+            });
+            // Lalu lari balik menyeberang MENTOK ke ujung kiri desktop
+            legs.push({
+              targetX: targetLeftX,
+              targetY: Math.min(maxY, Math.max(minY, pos.y)),
+              pace: leg2Pace,
+            });
+          } else {
+            // Lari dari kanan menyeberang MENTOK ke ujung kiri desktop
+            legs.push({
+              targetX: targetLeftX,
+              targetY: Math.min(maxY, Math.max(minY, pos.y)),
+              pace: leg1Pace,
+              pauseAfterMs: rand(550, 850), // Berhenti di ujung kiri, menoleh
+            });
+            // Lalu lari balik menyeberang MENTOK ke ujung kanan desktop
+            legs.push({
+              targetX: targetRightX,
+              targetY: Math.min(maxY, Math.max(minY, pos.y)),
+              pace: leg2Pace,
             });
           }
-        } else if (trajectory === "zigzag") {
-          // Pola Zig-Zag Multi-Arah
-          const seg1DirX = dirX;
-          const seg2DirX = -seg1DirX as (1 | -1);
-          const pace1 = resolvePace(pacePref);
-          const pace2 = resolvePace(pacePref);
+        } else if (pattern === "vertical") {
+          // POLA ATAS – BAWAH UJUNG KE UJUNG:
+          // Meluncur dari ujung bawah (taskbar) MENTOK ke ujung paling atas layar atau sebaliknya
+          const midY = (minY + maxY) / 2;
+          const startsNearBottom = pos.y > midY;
 
-          segments.push({
-            dx: seg1DirX * rand(80, 140),
-            dy: dirY * rand(40, 75),
-            pace: pace1,
-            pauseAfterMs: rand(350, 550),
-            pauseFacing: seg2DirX,
-          });
-          segments.push({
-            dx: seg2DirX * rand(90, 150),
-            dy: (Math.random() > 0.5 ? dirY : -dirY) * rand(35, 70),
-            pace: pace2,
-          });
+          const targetTopY = minY; // MENTOK KE PINGGIR ATAS!
+          const targetBottomY = maxY; // MENTOK KE ATAS TASKBAR!
+
+          const leg1Pace = resolvePace(pacePref);
+          const leg2Pace = resolvePace(pacePref);
+
+          if (startsNearBottom) {
+            legs.push({
+              targetX: Math.min(maxX, Math.max(minX, pos.x)),
+              targetY: targetTopY,
+              pace: leg1Pace,
+              pauseAfterMs: rand(500, 750),
+            });
+            legs.push({
+              targetX: Math.min(maxX, Math.max(minX, pos.x)),
+              targetY: targetBottomY,
+              pace: leg2Pace,
+            });
+          } else {
+            legs.push({
+              targetX: Math.min(maxX, Math.max(minX, pos.x)),
+              targetY: targetBottomY,
+              pace: leg1Pace,
+              pauseAfterMs: rand(500, 750),
+            });
+            legs.push({
+              targetX: Math.min(maxX, Math.max(minX, pos.x)),
+              targetY: targetTopY,
+              pace: leg2Pace,
+            });
+          }
         } else {
-          // Pola Jelajah Langsung (Direct Stroll / Sprint)
-          const pace = resolvePace(pacePref);
-          const distMultiplier = pace === "fast" ? 1.4 : pace === "slow" ? 0.75 : 1;
+          // POLA DIAGONAL SILANG (Pojok ke Pojok Seberang MENTOK):
+          const midX = (minX + maxX) / 2;
+          const midY = (minY + maxY) / 2;
 
-          segments.push({
-            dx: dirX * rand(110, 180) * distMultiplier,
-            dy: dirY * rand(30, 70) * distMultiplier,
-            pace,
-            pauseAfterMs: rand(400, 700),
-            pauseFacing: Math.random() > 0.5 ? (-dirX as (1 | -1)) : (dirX as (1 | -1)),
+          const targetCornerX = pos.x < midX ? maxX : minX;
+          const targetCornerY = pos.y < midY ? maxY : minY;
+
+          legs.push({
+            targetX: targetCornerX,
+            targetY: targetCornerY,
+            pace: resolvePace(pacePref),
+            pauseAfterMs: rand(500, 800),
           });
         }
 
-        // 4. Eksekusi setiap segmen gerakan
-        for (const seg of segments) {
+        // 3. Eksekusi setiap lintasan dengan pergerakan halus (smooth physics interpolation)
+        for (let legIdx = 0; legIdx < legs.length; legIdx++) {
+          const leg = legs[legIdx];
           if (cancelled || pausedRef.current || !enabledRef.current) break;
           const sNow = stateRef.current as PetState;
           if (sNow === "dragged" || sNow === "sleep") break;
 
-          // Pasang arah hadap dan kecepatan animasi
-          if (seg.dx !== 0) {
-            setFacing(seg.dx >= 0 ? 1 : -1);
+          const startX = pos.x;
+          const startY = pos.y;
+          const targetX = leg.targetX;
+          const targetY = leg.targetY;
+          const dx = targetX - startX;
+          const dy = targetY - startY;
+          const distance = Math.hypot(dx, dy);
+
+          if (distance < 5) continue;
+
+          // Pasang arah hadap (flip horizontally saat berbalik)
+          if (Math.abs(dx) > 5) {
+            setFacing(dx >= 0 ? 1 : -1);
           }
-          setWalkSpeed(seg.pace);
+          setWalkSpeed(leg.pace);
 
           try {
             reqRef.current("walk");
           } catch { /* noop */ }
 
-          // Konfigurasi kecepatan langkah per segmen:
-          // fast   : langkah sangat cepat & lincah (delay 15ms)
-          // normal : langkah wajar (delay 30ms)
-          // slow   : langkah santai & mengendap (delay 48ms)
-          const stepDelay = seg.pace === "fast" ? 15 : seg.pace === "slow" ? 48 : 30;
-          const steps = seg.pace === "fast" ? 28 : seg.pace === "slow" ? 34 : 30;
+          // Kecepatan langkah (kecepatan nyata dalam pixel per detik):
+          // fast   : lari cepat ~520 px/sec (interval 16ms, ~8.3 px/step)
+          // normal : jalan sedang ~260 px/sec (interval 22ms, ~5.7 px/step)
+          // slow   : jalan pelan ~130 px/sec (interval 35ms, ~4.5 px/step)
+          const stepDelay = leg.pace === "fast" ? 16 : leg.pace === "slow" ? 35 : 22;
+          const pxPerStep = leg.pace === "fast" ? 8.3 : leg.pace === "slow" ? 4.5 : 5.7;
+          const steps = Math.max(20, Math.round(distance / pxPerStep));
 
-          if (w) {
-            try {
-              const currentP = await w.outerPosition();
-              const startX = currentP.x;
-              const startY = currentP.y;
-              const physDx = seg.dx * scale;
-              const physDy = seg.dy * scale;
-              const stepX = physDx / steps;
-              const stepY = physDy / steps;
+          for (let step = 1; step <= steps; step++) {
+            if (cancelled || pausedRef.current || !enabledRef.current) break;
+            const sInner = stateRef.current as PetState;
+            if (sInner === "dragged" || sInner === "sleep") break;
 
-              for (let i = 1; i <= steps; i++) {
-                if (cancelled || pausedRef.current || !enabledRef.current) break;
-                const sInner = stateRef.current as PetState;
-                if (sInner === "dragged" || sInner === "sleep") break;
+            const progress = step / steps;
+            const curX = startX + dx * progress;
+            const curY = startY + dy * progress;
 
-                const targetX = Math.min(Math.max(startX + stepX * i, 0), Math.max(sw - 240 * scale, 0));
-                const targetY = Math.min(Math.max(startY + stepY * i, 0), Math.max(sh - 240 * scale, 0));
-
-                await w.setPosition(new PhysicalPosition(Math.round(targetX), Math.round(targetY)));
-                pos = { x: targetX, y: targetY };
-                await new Promise((r) => setTimeout(r, stepDelay));
+            if (w) {
+              try {
+                await w.setPosition(new PhysicalPosition(Math.round(curX), Math.round(curY)));
+                pos = { x: curX, y: curY };
+              } catch {
+                offsetRef.current = { x: curX, y: curY };
+                setOffset({ x: curX, y: curY });
+                pos = { x: curX, y: curY };
               }
-            } catch {
-              // fallback preview
-              for (let i = 1; i <= steps; i++) {
-                if (cancelled || pausedRef.current || !enabledRef.current) break;
-                const nextX = Math.max(-190, Math.min(190, offsetRef.current.x + (seg.dx / steps) * 0.55));
-                const nextY = Math.max(-110, Math.min(110, offsetRef.current.y + (seg.dy / steps) * 0.55));
-                offsetRef.current = { x: nextX, y: nextY };
-                setOffset({ x: nextX, y: nextY });
-                await new Promise((r) => setTimeout(r, stepDelay));
-              }
+            } else {
+              offsetRef.current = { x: curX, y: curY };
+              setOffset({ x: curX, y: curY });
+              pos = { x: curX, y: curY };
             }
-          } else {
-            // Web preview mode
-            for (let i = 1; i <= steps; i++) {
-              if (cancelled || pausedRef.current || !enabledRef.current) break;
-              const nextX = Math.max(-190, Math.min(190, offsetRef.current.x + (seg.dx / steps) * 0.55));
-              const nextY = Math.max(-110, Math.min(110, offsetRef.current.y + (seg.dy / steps) * 0.55));
-              offsetRef.current = { x: nextX, y: nextY };
-              setOffset({ x: nextX, y: nextY });
-              await new Promise((r) => setTimeout(r, stepDelay));
-            }
+
+            await new Promise((r) => setTimeout(r, stepDelay));
           }
 
-          // Jika ada jeda antar segmen (misal berhenti sejenak melihat-lihat atau menoleh)
-          if (seg.pauseAfterMs && !cancelled && !pausedRef.current) {
+          // Jika ada jeda di ujung (berhenti sejenak, menolehkan kepala sebelum lari balik)
+          if (leg.pauseAfterMs && !cancelled && !pausedRef.current) {
             try { reqRef.current("idle"); } catch { /* noop */ }
-            if (seg.pauseFacing) {
-              setFacing(seg.pauseFacing);
+            const nextLeg = legs[legIdx + 1];
+            if (nextLeg && Math.abs(nextLeg.targetX - pos.x) > 5) {
+              // Menoleh ke arah berlawanan sebelum melangkah kembali
+              setFacing(nextLeg.targetX >= pos.x ? 1 : -1);
             }
-            await new Promise((r) => setTimeout(r, seg.pauseAfterMs));
+            await new Promise((r) => setTimeout(r, leg.pauseAfterMs));
           }
         }
 
@@ -329,9 +344,12 @@ export function useWander({
     return () => {
       cancelled = true;
       if (idleTimer) clearTimeout(idleTimer);
+      busy.current = false;
+      setWalkSpeed("normal");
+      try { reqRef.current("idle"); } catch { /* noop */ }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, reducedMotion, paused, blocked]);
+  }, [enabled, wanderPace, wanderDirection, reducedMotion, paused, blocked]);
 
   return { offset, facing, walkSpeed };
 }

@@ -28,6 +28,7 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [timerLeft, setTimerLeft] = useState<number | null>(null);
   const [timerLabel, setTimerLabel] = useState("Fokus");
+  const [hovered, setHovered] = useState(false);
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   const dragInfo = useRef<{ sx: number; sy: number; dragging: boolean } | null>(null);
@@ -285,7 +286,26 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [visible, menu, panel, setVisibleBoth]);
 
-  const wanderPaused = menu !== null || panel !== null || petState === "dragged";
+  // Stop pet in its tracks when cursor focuses/hovers on the pet window
+  useEffect(() => {
+    const onEnter = () => setHovered(true);
+    const onLeave = (e: MouseEvent) => {
+      if (!e.relatedTarget) setHovered(false);
+    };
+    const onBlur = () => setHovered(false);
+    window.addEventListener("mouseenter", onEnter);
+    window.addEventListener("mouseleave", onLeave);
+    window.addEventListener("mouseover", onEnter);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("mouseenter", onEnter);
+      window.removeEventListener("mouseleave", onLeave);
+      window.removeEventListener("mouseover", onEnter);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+
+  const wanderPaused = menu !== null || panel !== null || petState === "dragged" || hovered;
   const { offset, facing, walkSpeed } = useWander({
     enabled: settings.wanderEnabled,
     wanderPace: settings.wanderPace ?? "random",
@@ -332,14 +352,24 @@ export default function App() {
   }, []);
 
   return (
-    <div className={`dp-root${panel ? " with-panel" : ""}`} onContextMenu={onCtxMenu}>
+    <div
+      className={`dp-root${panel ? " with-panel" : ""}`}
+      onContextMenu={onCtxMenu}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <div
         className="dp-pet-wrap"
         style={backend === "web-preview"
           ? { transform: `translate(${offset.x}px, ${offset.y}px) scale(${facing * petScale}, ${petScale})` }
           : { transform: `scale(${facing * petScale}, ${petScale})` }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         onMouseDown={onPetMouseDown}
-        onMouseMove={onPetMouseMove}
+        onMouseMove={(e) => {
+          if (!hovered) setHovered(true);
+          onPetMouseMove(e);
+        }}
         onMouseUp={onPetMouseUp}
         onDoubleClick={onDoubleClick}
         onContextMenu={onCtxMenu}
