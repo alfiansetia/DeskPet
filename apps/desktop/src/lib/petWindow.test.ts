@@ -1,36 +1,79 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { petWindowLogicalSize, measurePetContentHeight } from "./petWindow";
+import { petWindowLogicalSize, measurePetContentHeight, resolveEffectiveScale, petWrapBox, PET_BASE_SCALE } from "./petWindow";
+
+describe("resolveEffectiveScale (aset 50% @100%)", () => {
+  it("skala dasar 0.5: 100% = setengah aset", () => {
+    expect(PET_BASE_SCALE).toBe(0.5);
+    expect(resolveEffectiveScale(1, false)).toBe(0.5);
+  });
+
+  it("slider 50–200% tetap relatif terhadap default baru", () => {
+    expect(resolveEffectiveScale(0.5, false)).toBe(0.25);
+    expect(resolveEffectiveScale(2, false)).toBe(1);
+  });
+
+  it("alert penting selalu 2x ukuran normal user", () => {
+    expect(resolveEffectiveScale(1, true)).toBe(1);
+    expect(resolveEffectiveScale(2, true)).toBe(1);
+    expect(resolveEffectiveScale(1, true)).toBe(resolveEffectiveScale(1, false) * 2);
+  });
+
+  it("window default baru ~96px (dulu 160px)", () => {
+    expect(petWindowLogicalSize(resolveEffectiveScale(1, false), { alert: false, mini: false, temp: false, timer: false }))
+      .toEqual({ width: 96, height: 102 });
+  });
+
+  it("nilai korup diamankan ke default", () => {
+    expect(resolveEffectiveScale(NaN, false)).toBe(0.5);
+    expect(resolveEffectiveScale(99, false)).toBe(1);
+  });
+});
+
+describe("petWrapBox (layout = visual, tanpa gap hantu)", () => {
+  it("box layout sama dengan ukuran visual hasil scale", () => {
+    expect(petWrapBox(0.5)).toEqual({ width: 64, height: 64 });
+    expect(petWrapBox(1)).toEqual({ width: 128, height: 128 });
+    expect(petWrapBox(0.25)).toEqual({ width: 32, height: 32 });
+  });
+});
 
 describe("petWindowLogicalSize (blocking area dinamis)", () => {
   it("tanpa konten tambahan: window dipeluk ke sprite + breathing", () => {
-    // scale 1: 128 + 32 = 160 lebar, +8 = 168 tinggi (dulu 220x236)
-    expect(petWindowLogicalSize(1, { alert: false, mini: false, timer: false }))
-      .toEqual({ width: 160, height: 168 });
+    // scale 1: 128 + 32 = 160 lebar, +6 = 166 tinggi (dulu 220x236)
+    expect(petWindowLogicalSize(1, { alert: false, mini: false, temp: false, timer: false }))
+      .toEqual({ width: 160, height: 166 });
   });
 
   it("mengecil saat pet diperkecil (blocking ikut kecil)", () => {
-    const small = petWindowLogicalSize(0.5, { alert: false, mini: false, timer: false });
-    const normal = petWindowLogicalSize(1, { alert: false, mini: false, timer: false });
-    expect(small).toEqual({ width: 96, height: 104 });
+    const small = petWindowLogicalSize(0.5, { alert: false, mini: false, temp: false, timer: false });
+    const normal = petWindowLogicalSize(1, { alert: false, mini: false, temp: false, timer: false });
+    expect(small).toEqual({ width: 96, height: 102 });
     expect(small.width).toBeLessThan(normal.width);
     expect(small.height).toBeLessThan(normal.height);
   });
 
   it("membesar saat alert 200% tapi tetap proporsional sprite", () => {
-    expect(petWindowLogicalSize(2, { alert: false, mini: false, timer: false }))
-      .toEqual({ width: 288, height: 296 });
+    expect(petWindowLogicalSize(2, { alert: false, mini: false, temp: false, timer: false }))
+      .toEqual({ width: 288, height: 294 });
   });
 
   it("pill mini / bubble alert melebarkan window sesuai konten", () => {
-    expect(petWindowLogicalSize(1, { alert: false, mini: true, timer: false }).width).toBe(330);
-    expect(petWindowLogicalSize(1, { alert: true, mini: false, timer: false }).width).toBe(360);
-    expect(petWindowLogicalSize(1, { alert: true, mini: false, timer: false }).height)
-      .toBe(160 + 190 + 8);
+    expect(petWindowLogicalSize(1, { alert: false, mini: true, temp: false, timer: false }).width).toBe(330);
+    expect(petWindowLogicalSize(1, { alert: true, mini: false, temp: false, timer: false }).width).toBe(360);
+    expect(petWindowLogicalSize(1, { alert: true, mini: false, temp: false, timer: false }).height)
+      .toBe(160 + 190 + 6);
   });
 
   it("badge timer menambah tinggi seperlunya", () => {
-    expect(petWindowLogicalSize(1, { alert: false, mini: false, timer: true }).height)
-      .toBe(168 + 28);
+    expect(petWindowLogicalSize(1, { alert: false, mini: false, temp: false, timer: true }).height)
+      .toBe(166 + 28);
+  });
+
+  it("bubble suhu menambah tinggi seperlunya (tumpuk di atas pill)", () => {
+    const base = petWindowLogicalSize(1, { alert: false, mini: true, temp: false, timer: false });
+    const stacked = petWindowLogicalSize(1, { alert: false, mini: true, temp: true, timer: false });
+    expect(stacked.height).toBe(base.height + 30);
+    expect(stacked.width).toBe(base.width);
   });
 });
 
@@ -38,7 +81,7 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
   afterEach(() => vi.restoreAllMocks());
 
   function mockDom(o: {
-    petH?: number; speechH?: number; miniH?: number; statusH?: number; hasBubble?: boolean; hasStatus?: boolean;
+    petH?: number; speechH?: number; miniH?: number; tempH?: number; statusH?: number; hasBubble?: boolean; hasStatus?: boolean;
   }) {
     vi.spyOn(document, "querySelector").mockImplementation((sel: string) => {
       if (sel === ".dp-pet-wrap") {
@@ -49,6 +92,7 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
       const map: Record<string, number | undefined> = {
         ".dp-root > .dp-speech": o.speechH,
         ".dp-root > .dp-bubble-mini": o.miniH,
+        ".dp-root > .dp-bubble-temp": o.tempH,
         ".dp-root > .dp-status": o.statusH,
       };
       const h = map[sel];
@@ -58,14 +102,14 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
 
   it("tanpa bubble: tidak lebih kecil dari ukuran tight", () => {
     mockDom({});
-    expect(measurePetContentHeight(1)).toBe(168);
-    expect(measurePetContentHeight(0.5)).toBe(104);
+    expect(measurePetContentHeight(1)).toBe(166);
+    expect(measurePetContentHeight(0.5)).toBe(102);
   });
 
   it("bubble pendek: tinggi = konten + margin layout", () => {
-    // pet 128 + napas 8 + bubble 100 + margin 2 + padding bawah 10 + pengaman 8
+    // pet 128 + napas 6 + bubble 100 + margin 0 + padding bawah 10 + pengaman 8
     mockDom({ petH: 128, speechH: 100, hasBubble: true });
-    expect(measurePetContentHeight(1)).toBe(8 + 100 + 2 + 128 + 10 + 8);
+    expect(measurePetContentHeight(1)).toBe(6 + 100 + 128 + 10 + 8);
   });
 
   it("bubble panjang (judul pengingat panjang): window ikut meninggi", () => {
@@ -73,17 +117,22 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
     vi.restoreAllMocks();
     mockDom({ petH: 128, speechH: 260, hasBubble: true });
     const tall = measurePetContentHeight(1);
-    expect(tall).toBe(8 + 260 + 2 + 128 + 10 + 8);
+    expect(tall).toBe(6 + 260 + 128 + 10 + 8);
     expect(tall).toBeGreaterThan(short);
   });
 
   it("pill mini + badge timer ikut dihitung", () => {
     mockDom({ petH: 64, miniH: 23, statusH: 26, hasBubble: true });
-    expect(measurePetContentHeight(0.5)).toBe(8 + 23 + 4 + 64 + 6 + 26 + 10 + 8);
+    expect(measurePetContentHeight(0.5)).toBe(6 + 23 + 2 + 64 + 6 + 26 + 10 + 8);
+  });
+
+  it("bubble suhu menumpuk di atas pill (ikut dihitung + margin)", () => {
+    mockDom({ petH: 64, tempH: 20, miniH: 23, hasBubble: true });
+    expect(measurePetContentHeight(0.5)).toBe(6 + 20 + 2 + 23 + 2 + 64 + 10 + 8);
   });
 
   it("badge timer saja: konten dijangkar bawah (padding 10)", () => {
     mockDom({ petH: 128, statusH: 26, hasStatus: true });
-    expect(measurePetContentHeight(1)).toBe(8 + 128 + 6 + 26 + 10 + 8);
+    expect(measurePetContentHeight(1)).toBe(6 + 128 + 6 + 26 + 10 + 8);
   });
 });

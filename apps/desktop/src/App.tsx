@@ -5,12 +5,12 @@ import { PetCanvas } from "./components/PetCanvas/PetCanvas";
 import { MainPanel, schedulerTick, type PanelTab } from "./components/MainPanel";
 import { Icon, type IconName } from "./components/Icon";
 import { PetContextMenu, type MenuAction } from "./features/pet/PetContextMenu";
-import { useWander } from "./features/pet/useWander";
+import { useWander, shouldCenterPet } from "./features/pet/useWander";
 import { useIdleBehavior } from "./features/pet/useIdleBehavior";
 import {
   TRANSIENT_STATES, TRANSIENT_TIMEOUT_MS, canTransitionTo, type PetState,
 } from "./features/pet/petStateMachine";
-import { loadSettings, saveSettings, store, type DeskSettings, type WanderPace, type WanderDirection } from "./lib/store";
+import { loadSettings, saveSettings, store, uid, type DeskSettings, type WanderPace, type WanderDirection } from "./lib/store";
 import { pullBackendSettings, pushBackendSettings } from "./lib/settingsSync";
 import { onToast, toast, type Toast } from "./lib/notify";
 import { speak, stopSpeech } from "./lib/tts";
@@ -20,7 +20,8 @@ import {
   type PrayerDay,
 } from "./features/prayer/prayer";
 import { isQuietHours } from "./lib/time";
-import { petWindowLogicalSize, measurePetContentHeight } from "./lib/petWindow";
+import { getCachedWeather, getWeather, type WeatherNow } from "./features/weather/weather";
+import { petWindowLogicalSize, measurePetContentHeight, resolveEffectiveScale, petWrapBox } from "./lib/petWindow";
 import { keepWindowOnScreen } from "./lib/windowFit";
 
 /**
@@ -48,6 +49,8 @@ export default function App() {
   const [prayerTick, setPrayerTick] = useState(0); // re-render countdown tiap detik
   const [alertEnlarged, setAlertEnlarged] = useState(false); // pesan penting -> pet 200%
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const panelRef = useRef<PanelTab | null>(null);
+  panelRef.current = panel;
 
   // Micro-emote bubble (emoji kecil mengambang di atas karakter saat idle)
   const [microEmote, setMicroEmote] = useState<string | null>(null);
@@ -123,16 +126,16 @@ export default function App() {
   }, [requestState]);
 
   // Toasts (in-app saja, tanpa izin OS). Pesan penting -> pet membesar 200%.
-  // Toast reminder PENTING: tidak auto-hilang (menunggu klik konfirmasi),
-  // karena kalau toast hilang duluan user tidak punya apa-apa untuk diklik
-  // selain Esc. Toast biasa tetap auto-hilang 4,2 dtk.
+  // Alert PENTING (kind reminder) TIDAK masuk daftar toast kiri: sudah diwakili
+  // bubble di atas pet yang clickable untuk konfirmasi. Toast kiri hanya untuk
+  // info/sukses/error biasa (auto-hilang 4,2 dtk).
   useEffect(() => onToast((t) => {
-    setToasts((xs) => [t, ...xs].slice(0, 4));
     if (t.kind === "reminder") {
       setAlertEnlarged(true);
       void requestState("reminder");
       return;
     }
+    setToasts((xs) => [t, ...xs].slice(0, 4));
     setTimeout(() => setToasts((xs) => xs.filter((x) => x.id !== t.id)), 4200);
   }), [requestState]);
 
@@ -140,13 +143,30 @@ export default function App() {
   // (the 230px context menu cannot fit in the 220px pet window).
   // Window DIPELUK ke sprite (tight, bukan 220px longgar): area transparan
   // yang ikut memblokir klik window di belakang jadi minimal dan ikut
-  // mengecil/membesar bersama petScale. Sprite 128px + breathing 32px
-  // (16/sisi, ruang untuk bob/shadow/outline) -> 160px @scale 1.
+  // mengecil/membesar bersama petScale. Aset 128px dirender 64px @100%
+  // (PET_BASE_SCALE 0.5) -> window ~96px @scale 1.
   // Pill/bubble/timer tetap melebarkan window sesuai kebutuhan kontennya.
+  // Suhu kota sholat untuk bubble suhu (cache 15 mnt, refresh 10 mnt).
+  const [weather, setWeather] = useState<WeatherNow | null>(() => getCachedWeather("1301"));
+  useEffect(() => {
+    if (settings.weatherEnabled === false) { setWeather(null); return; }
+    const cityId = settings.prayerCityId ?? "1301";
+    const cityName = settings.prayerCityName ?? "KOTA JAKARTA";
+    setWeather(getCachedWeather(cityId));
+    let stop = false;
+    const run = async () => {
+      const w = await getWeather(cityId, cityName);
+      if (!stop) setWeather(w);
+    };
+    void run();
+    const id = setInterval(() => { void run(); }, 10 * 60_000);
+    return () => { stop = true; clearInterval(id); };
+  }, [settings.prayerCityId, settings.prayerCityName, settings.weatherEnabled]);
   const petScale = settings.petScale ?? 1;
-  const effectiveScale = alertEnlarged ? 2 : petScale;
+  const effectiveScale = resolveEffectiveScale(petScale, alertEnlarged);
   const reserveAlert = alertBubble !== null;
   const reserveMini = !reserveAlert && settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay !== null && panel === null;
+  const reserveTemp = !reserveAlert && settings.weatherEnabled !== false && settings.tempBubbleEnabled !== false && weather !== null && panel === null;
   const reserveTimer = timerLeft !== null && settings.timerBadgeEnabled !== false;
   useEffect(() => {
     let cancelled = false;
@@ -165,7 +185,7 @@ export default function App() {
           await w.setSize(new LogicalSize(finalW, finalH));
         } else {
           const guess = petWindowLogicalSize(effectiveScale, {
-            alert: reserveAlert, mini: reserveMini, timer: reserveTimer,
+            alert: reserveAlert, mini: reserveMini, temp: reserveTemp, timer: reserveTimer,
           });
           // Lebar final langsung dari tebakan (tetap, anti-flicker teks
           // countdown tiap detik); tinggi dikoreksi dari hasil ukur DOM agar
@@ -189,7 +209,7 @@ export default function App() {
       } catch { /* web preview uses CSS */ }
     })();
     return () => { cancelled = true; };
-  }, [panel, menu, effectiveScale, reserveAlert, reserveMini, reserveTimer, alertBubble]);
+  }, [panel, menu, effectiveScale, reserveAlert, reserveMini, reserveTemp, reserveTimer, alertBubble]);
 
   // Scheduler tick (PRD §5.2: DB = source of truth, no duplicate, missed handling)
   useEffect(() => {
@@ -201,6 +221,7 @@ export default function App() {
         // Sama seperti sholat: bubble besar di ATAS pet (tidak menutupi kucing)
         // + membesar 200% + mengecil saat dikonfirmasi (klik pet/bubble/toast/Esc).
         setAlertBubble({ title: r.title, body: "Pengingat jatuh tempo — klik untuk konfirmasi.", icon: "bell" });
+        maybeCenterPetRef.current();
         const autoSpeak = store.automations.all().find((a) => a.id === "auto_speak")?.enabled ?? true;
         toast(r.title, "Pengingat jatuh tempo", "reminder");
         if (autoSpeak && !settings.speechMuted) speak(`Pengingat: ${r.title}`, { muted: settings.speechMuted });
@@ -221,6 +242,7 @@ export default function App() {
           // Sama seperti pengingat lain: bubble di atas pet + membesar + konfirmasi.
           setAlertBubble({ title: "Ringkasan pagi", body: `${dueToday} tugas terbuka — klik untuk konfirmasi.`, icon: "sun" });
           setAlertEnlarged(true);
+          maybeCenterPetRef.current();
           void requestState("reminder");
           toast("Ringkasan pagi", `${dueToday} tugas terbuka. Dobel-klik pet, lalu buka tab Tugas.`, "reminder");
           setTimeout(() => {
@@ -269,6 +291,13 @@ export default function App() {
         if (live) {
           day = live;
           setPrayerDay(live);
+          // Audit hanya network sungguhan (sekali per kota per hari).
+          if (live.source !== "cache") {
+            store.audit.push({
+              id: uid("boot"), actionId: "prayer.fetch", source: "prayer",
+              status: "executed", confirmationRequired: false, createdAt: new Date().toISOString(),
+            });
+          }
         }
       }
       if (!day) return;
@@ -288,6 +317,7 @@ export default function App() {
             setAlertBubble({ title: `Masuk waktu ${name} · ${timeOf(day, name)}`, body: "Yuk sholat dulu — klik untuk konfirmasi.", icon: "moonStar" });
           }
           setAlertEnlarged(true);
+          maybeCenterPetRef.current();
           void requestState("reminder");
           toast(`${name} ${timeOf(day, name)}`, `${cityName} · saatnya sholat`, "reminder");
           if (settings.prayerAdzanEnabled && !quiet) {
@@ -362,6 +392,7 @@ export default function App() {
           setAlertEnlarged(true); // karakter membesar sampai dikonfirmasi
           // Sama seperti sholat/pengingat: bubble besar di ATAS pet.
           setAlertBubble({ title: `${timerLabel} selesai`, body: "Waktunya istirahat / lanjut — klik untuk konfirmasi.", icon: "timer" });
+          maybeCenterPetRef.current();
           toast(`${timerLabel} selesai`, "Waktunya istirahat / lanjut.", "reminder");
           if (!settings.speechMuted) speak("Timer selesai.", { muted: settings.speechMuted });
           setTimeout(() => {
@@ -530,8 +561,9 @@ export default function App() {
     };
   }, []);
 
-  const wanderPaused = menu !== null || panel !== null || petState === "dragged" || hovered;
-  const { offset, facing, walkSpeed } = useWander({
+  const alertActive = alertBubble !== null;
+  const wanderPaused = menu !== null || panel !== null || petState === "dragged" || hovered || alertActive;
+  const { offset, facing, walkSpeed, centerPet } = useWander({
     enabled: settings.wanderEnabled,
     wanderPace: settings.wanderPace ?? "random",
     wanderDirection: settings.wanderDirection ?? "random",
@@ -540,6 +572,17 @@ export default function App() {
     paused: wanderPaused,
     requestState,
   });
+
+  // Alert penting -> pet kembali ke tengah layar agar jadi fokus.
+  // Ditulis via ref (bukan useCallback) karena dipakai efek interval yang
+  // dideklarasikan lebih awal di file — menghindari TDZ block-scoped const.
+  // Isi selalu fresh via settingsRef/panelRef; centerPet stabil dari hook.
+  // H-X pengingat sholat (info) sengaja TIDAK center — hanya yang enlarge.
+  const maybeCenterPetRef = useRef(() => {});
+  maybeCenterPetRef.current = () => {
+    if (!shouldCenterPet(settingsRef.current.centerOnAlert, panelRef.current !== null)) return;
+    void centerPet();
+  };
 
   // Idle micro-behavior: karakter aktif melakukan aksi kecil saat idle
   const idlePaused = wanderPaused || petState !== "idle";
@@ -623,10 +666,15 @@ export default function App() {
   const miniNext = settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay && !panel
     ? getNextPrayer(prayerDay, new Date())
     : null;
+  // Bubble suhu menumpuk DI ATAS pill sholat; sembunyi saat alert/panel.
+  const tempBubble = !alertBubble && !panel && settings.weatherEnabled !== false
+    && settings.tempBubbleEnabled !== false && weather
+    ? weather
+    : null;
 
   return (
     <div
-      className={`dp-root${panel ? " with-panel" : ""}${(alertBubble || miniNext) && !panel ? " has-bubble" : ""}${reserveTimer && !panel ? " has-status" : ""}`}
+      className={`dp-root${panel ? " with-panel" : ""}${(alertBubble || miniNext || tempBubble) && !panel ? " has-bubble" : ""}${reserveTimer && !panel ? " has-status" : ""}`}
       onContextMenu={onCtxMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -643,6 +691,13 @@ export default function App() {
           </button>
         </div>
       )}
+      {!alertBubble && tempBubble && (
+        <button className="dp-bubble-temp" data-testid="temp-bubble"
+          onClick={() => openTab("prayer")}
+          title="Klik untuk buka cuaca + jadwal sholat">
+          <span className="dp-line"><Icon name={tempBubble.icon} size={12} /> {tempBubble.tempC}° {tempBubble.label}</span>
+        </button>
+      )}
       {!alertBubble && miniNext && (
         <button className="dp-bubble-mini" data-testid="prayer-mini"
           onClick={() => openTab("prayer")}
@@ -653,8 +708,8 @@ export default function App() {
       <div
         className={`dp-pet-wrap${alertEnlarged ? " dp-alert" : ""}${idleAnimClass ? ` ${idleAnimClass}` : ""}`}
         style={backend === "web-preview"
-          ? { transform: `translate(${offset.x}px, ${offset.y}px) scale(${facing * effectiveScale}, ${effectiveScale})` }
-          : { transform: `scale(${facing * effectiveScale}, ${effectiveScale})` }}
+          ? { ...petWrapBox(effectiveScale), transform: `translate(${offset.x}px, ${offset.y}px) scale(${facing * effectiveScale}, ${effectiveScale})` }
+          : { ...petWrapBox(effectiveScale), transform: `scale(${facing * effectiveScale}, ${effectiveScale})` }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onMouseDown={onPetMouseDown}
@@ -717,17 +772,13 @@ export default function App() {
 
       <div className="dp-toasts" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`dp-toast ${t.kind}${t.kind === "reminder" ? " clickable" : ""}`}
-            role={t.kind === "reminder" ? "alert" : "status"}
-            onClick={() => {
-              if (t.kind === "reminder") confirmAlert();
-              setToasts((xs) => xs.filter((x) => x.id !== t.id));
-            }}
-            title={t.kind === "reminder" ? "Klik untuk konfirmasi (pet kembali normal)" : "Klik untuk tutup"}>
+          <div key={t.id} className={`dp-toast ${t.kind}`}
+            role="status"
+            onClick={() => setToasts((xs) => xs.filter((x) => x.id !== t.id))}
+            title="Klik untuk tutup">
             <div className="dp-toast-main">
               <span className="dp-toast-icon"><Icon name={TOAST_ICON[t.kind]} size={14} /></span>
-              <div><b>{t.title}</b>{t.body ? <div>{t.body}</div> : null}
-                {t.kind === "reminder" && <div className="dp-toast-hint"><Icon name="check" size={11} /> klik untuk konfirmasi</div>}</div>
+              <div><b>{t.title}</b>{t.body ? <div>{t.body}</div> : null}</div>
             </div>
           </div>
         ))}

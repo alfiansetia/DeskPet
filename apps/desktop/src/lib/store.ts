@@ -84,6 +84,9 @@ export interface DeskSettings {
   prayerBubbleEnabled: boolean;
   timerBadgeEnabled: boolean;
   timerDoneAlertEnabled: boolean;
+  centerOnAlert: boolean;
+  weatherEnabled: boolean;
+  tempBubbleEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: DeskSettings = {
@@ -107,6 +110,9 @@ export const DEFAULT_SETTINGS: DeskSettings = {
   prayerBubbleEnabled: true,
   timerBadgeEnabled: true,
   timerDoneAlertEnabled: true,
+  centerOnAlert: true,
+  weatherEnabled: true,
+  tempBubbleEnabled: true,
 };
 
 /** Validate + fill defaults for a raw settings object (local cache or backend blob). */
@@ -142,7 +148,10 @@ export function normalizeSettings(raw: Partial<DeskSettings>): DeskSettings {
     else petPaletteId = DEFAULT_SETTINGS.petPaletteId;
   }
   const characterId = characterIdFor(petSpecies);
-  return { ...DEFAULT_SETTINGS, ...raw, telemetryEnabled: false as const, petScale: scale, wanderPace, wanderDirection, prayerReminderMins, petSpecies, petPaletteId, petCustomColor, characterId };
+  const centerOnAlert = typeof raw.centerOnAlert === "boolean" ? raw.centerOnAlert : true;
+  const weatherEnabled = typeof raw.weatherEnabled === "boolean" ? raw.weatherEnabled : true;
+  const tempBubbleEnabled = typeof raw.tempBubbleEnabled === "boolean" ? raw.tempBubbleEnabled : true;
+  return { ...DEFAULT_SETTINGS, ...raw, telemetryEnabled: false as const, petScale: scale, wanderPace, wanderDirection, prayerReminderMins, petSpecies, petPaletteId, petCustomColor, characterId, centerOnAlert, weatherEnabled, tempBubbleEnabled };
 }
 
 export function loadSettings(): DeskSettings {
@@ -186,6 +195,7 @@ export const store = {
       all.unshift(e);
       saveJSON(K.audit, all.slice(0, 200));
     },
+    clear() { saveJSON(K.audit, []); },
   },
 };
 

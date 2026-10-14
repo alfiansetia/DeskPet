@@ -4,6 +4,7 @@
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import App from "./App";
+import { store } from "./lib/store";
 import { toYMD } from "./features/prayer/prayer";
 
 function hhmm(d: Date): string {
@@ -35,5 +36,41 @@ describe("App prayer pill", () => {
     await waitFor(() => {
       expect(document.querySelector(".dp-root.has-bubble")).not.toBeNull();
     });
+  });
+
+  it("boot tanpa cache + online -> network sekali + audit prayer.fetch sekali", async () => {
+    const ymd = toYMD(new Date());
+    const now = new Date();
+    const in25 = new Date(now.getTime() + 25 * 60_000);
+    const in85 = new Date(now.getTime() + 85 * 60_000);
+    const past = (h: number) => { const d = new Date(now); d.setHours(h, 0, 0, 0); return d; };
+    const fetchMock = vi.fn((url: string) => {
+      if (String(url).includes("open-meteo") || String(url).includes("geocoding")) {
+        return Promise.reject(new Error("cuaca offline di test"));
+      }
+      if (String(url).includes("jadwal")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: true,
+            data: {
+              lokasi: "KOTA JAKARTA",
+              jadwal: {
+                date: ymd, imsak: hhmm(past(4)), subuh: hhmm(past(4)), terbit: hhmm(past(5)),
+                dhuha: hhmm(past(6)), dzuhur: hhmm(past(11)), ashar: hhmm(past(15)),
+                maghrib: hhmm(in25), isya: hhmm(in85),
+              },
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ data: [] }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await screen.findByTestId("prayer-mini", undefined, { timeout: 5000 });
+    const jadwalCalls = fetchMock.mock.calls.filter(([u]) => String(u).includes("jadwal"));
+    expect(jadwalCalls).toHaveLength(1);
+    expect(store.audit.all().filter((a) => a.actionId === "prayer.fetch")).toHaveLength(1);
   });
 });

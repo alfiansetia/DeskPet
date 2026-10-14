@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { clamp, previewBounds, spritePads, tauriBounds } from "./useWander";
+import { act, renderHook } from "@testing-library/react";
+import { clamp, previewBounds, shouldCenterPet, spritePads, tauriBounds, useWander } from "./useWander";
 
 describe("wander bounds (mentok tepi)", () => {
   it("clamp membatasi nilai ke rentang", () => {
@@ -79,5 +80,25 @@ describe("wander bounds (mentok tepi)", () => {
     expect(b.maxX - (400 - 64)).toBe(-4);
     expect(b.minY - (-300 + 64)).toBe(4);
     expect(b.maxY - (300 - 64)).toBe(-4);
+  });
+});
+
+describe("shouldCenterPet (fokus alert ke tengah)", () => {
+  it("aktif default; mati bila user mematikan / panel terbuka", () => {
+    expect(shouldCenterPet(true, false)).toBe(true);
+    expect(shouldCenterPet(undefined, false)).toBe(true); // simpanan lama
+    expect(shouldCenterPet(false, false)).toBe(false);
+    expect(shouldCenterPet(true, true)).toBe(false);
+    expect(shouldCenterPet(false, true)).toBe(false);
+  });
+});
+
+describe("centerPet (preview fallback)", () => {
+  it("selalu resolve + offset kembali ke tengah tanpa backend", async () => {
+    const { result } = renderHook(() =>
+      useWander({ enabled: false, petState: "idle", reducedMotion: false, paused: true, requestState: () => {} })
+    );
+    await act(async () => { await result.current.centerPet(); });
+    expect(result.current.offset).toEqual({ x: 0, y: 0 });
   });
 });

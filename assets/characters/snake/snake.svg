@@ -16,15 +16,19 @@
   </defs>
 
   <g id="outline">
+    <rect x="68" y="32" width="4" height="4" class="outline" />
+    <rect x="72" y="32" width="4" height="4" class="outline" />
+    <rect x="76" y="32" width="4" height="4" class="outline" />
+    <rect x="80" y="32" width="4" height="4" class="outline" />
+    <rect x="84" y="32" width="4" height="4" class="outline" />
+    <rect x="88" y="32" width="4" height="4" class="outline" />
+    <rect x="92" y="32" width="4" height="4" class="outline" />
+    <rect x="96" y="32" width="4" height="4" class="outline" />
+    <rect x="100" y="32" width="4" height="4" class="outline" />
+    <rect x="104" y="32" width="4" height="4" class="outline" />
+    <rect x="68" y="36" width="4" height="4" class="outline" />
+    <rect x="104" y="36" width="4" height="4" class="outline" />
     <rect x="68" y="40" width="4" height="4" class="outline" />
-    <rect x="72" y="40" width="4" height="4" class="outline" />
-    <rect x="76" y="40" width="4" height="4" class="outline" />
-    <rect x="80" y="40" width="4" height="4" class="outline" />
-    <rect x="84" y="40" width="4" height="4" class="outline" />
-    <rect x="88" y="40" width="4" height="4" class="outline" />
-    <rect x="92" y="40" width="4" height="4" class="outline" />
-    <rect x="96" y="40" width="4" height="4" class="outline" />
-    <rect x="100" y="40" width="4" height="4" class="outline" />
     <rect x="104" y="40" width="4" height="4" class="outline" />
     <rect x="68" y="44" width="4" height="4" class="outline" />
     <rect x="104" y="44" width="4" height="4" class="outline" />
@@ -35,165 +39,189 @@
     <rect x="68" y="56" width="4" height="4" class="outline" />
     <rect x="104" y="56" width="4" height="4" class="outline" />
     <rect x="68" y="60" width="4" height="4" class="outline" />
+    <rect x="72" y="60" width="4" height="4" class="outline" />
+    <rect x="76" y="60" width="4" height="4" class="outline" />
+    <rect x="80" y="60" width="4" height="4" class="outline" />
+    <rect x="84" y="60" width="4" height="4" class="outline" />
+    <rect x="88" y="60" width="4" height="4" class="outline" />
+    <rect x="92" y="60" width="4" height="4" class="outline" />
+    <rect x="96" y="60" width="4" height="4" class="outline" />
+    <rect x="100" y="60" width="4" height="4" class="outline" />
     <rect x="104" y="60" width="4" height="4" class="outline" />
-    <rect x="68" y="64" width="4" height="4" class="outline" />
-    <rect x="104" y="64" width="4" height="4" class="outline" />
-    <rect x="68" y="68" width="4" height="4" class="outline" />
-    <rect x="72" y="68" width="4" height="4" class="outline" />
+    <rect x="76" y="64" width="4" height="4" class="outline" />
+    <rect x="92" y="64" width="4" height="4" class="outline" />
     <rect x="76" y="68" width="4" height="4" class="outline" />
-    <rect x="80" y="68" width="4" height="4" class="outline" />
-    <rect x="84" y="68" width="4" height="4" class="outline" />
-    <rect x="88" y="68" width="4" height="4" class="outline" />
     <rect x="92" y="68" width="4" height="4" class="outline" />
-    <rect x="96" y="68" width="4" height="4" class="outline" />
-    <rect x="100" y="68" width="4" height="4" class="outline" />
-    <rect x="104" y="68" width="4" height="4" class="outline" />
     <rect x="76" y="72" width="4" height="4" class="outline" />
     <rect x="92" y="72" width="4" height="4" class="outline" />
+    <rect x="20" y="76" width="4" height="4" class="outline" />
+    <rect x="24" y="76" width="4" height="4" class="outline" />
+    <rect x="28" y="76" width="4" height="4" class="outline" />
+    <rect x="32" y="76" width="4" height="4" class="outline" />
+    <rect x="36" y="76" width="4" height="4" class="outline" />
+    <rect x="40" y="76" width="4" height="4" class="outline" />
+    <rect x="44" y="76" width="4" height="4" class="outline" />
+    <rect x="48" y="76" width="4" height="4" class="outline" />
+    <rect x="52" y="76" width="4" height="4" class="outline" />
+    <rect x="56" y="76" width="4" height="4" class="outline" />
+    <rect x="60" y="76" width="4" height="4" class="outline" />
+    <rect x="64" y="76" width="4" height="4" class="outline" />
+    <rect x="68" y="76" width="4" height="4" class="outline" />
+    <rect x="72" y="76" width="4" height="4" class="outline" />
     <rect x="76" y="76" width="4" height="4" class="outline" />
+    <rect x="80" y="76" width="4" height="4" class="outline" />
+    <rect x="84" y="76" width="4" height="4" class="outline" />
+    <rect x="88" y="76" width="4" height="4" class="outline" />
     <rect x="92" y="76" width="4" height="4" class="outline" />
-    <rect x="76" y="80" width="4" height="4" class="outline" />
-    <rect x="92" y="80" width="4" height="4" class="outline" />
+    <rect x="96" y="76" width="4" height="4" class="outline" />
+    <rect x="100" y="76" width="4" height="4" class="outline" />
+    <rect x="8" y="80" width="4" height="4" class="outline" />
+    <rect x="12" y="80" width="4" height="4" class="outline" />
+    <rect x="16" y="80" width="4" height="4" class="outline" />
+    <rect x="20" y="80" width="4" height="4" class="outline" />
+    <rect x="100" y="80" width="4" height="4" class="outline" />
+    <rect x="8" y="84" width="4" height="4" class="outline" />
     <rect x="20" y="84" width="4" height="4" class="outline" />
-    <rect x="24" y="84" width="4" height="4" class="outline" />
-    <rect x="28" y="84" width="4" height="4" class="outline" />
-    <rect x="32" y="84" width="4" height="4" class="outline" />
-    <rect x="36" y="84" width="4" height="4" class="outline" />
-    <rect x="40" y="84" width="4" height="4" class="outline" />
-    <rect x="44" y="84" width="4" height="4" class="outline" />
-    <rect x="48" y="84" width="4" height="4" class="outline" />
-    <rect x="52" y="84" width="4" height="4" class="outline" />
-    <rect x="56" y="84" width="4" height="4" class="outline" />
-    <rect x="60" y="84" width="4" height="4" class="outline" />
-    <rect x="64" y="84" width="4" height="4" class="outline" />
-    <rect x="68" y="84" width="4" height="4" class="outline" />
-    <rect x="72" y="84" width="4" height="4" class="outline" />
-    <rect x="76" y="84" width="4" height="4" class="outline" />
-    <rect x="80" y="84" width="4" height="4" class="outline" />
-    <rect x="84" y="84" width="4" height="4" class="outline" />
-    <rect x="88" y="84" width="4" height="4" class="outline" />
-    <rect x="92" y="84" width="4" height="4" class="outline" />
-    <rect x="96" y="84" width="4" height="4" class="outline" />
     <rect x="100" y="84" width="4" height="4" class="outline" />
     <rect x="8" y="88" width="4" height="4" class="outline" />
-    <rect x="12" y="88" width="4" height="4" class="outline" />
-    <rect x="16" y="88" width="4" height="4" class="outline" />
     <rect x="20" y="88" width="4" height="4" class="outline" />
     <rect x="100" y="88" width="4" height="4" class="outline" />
     <rect x="8" y="92" width="4" height="4" class="outline" />
     <rect x="20" y="92" width="4" height="4" class="outline" />
     <rect x="100" y="92" width="4" height="4" class="outline" />
     <rect x="8" y="96" width="4" height="4" class="outline" />
+    <rect x="12" y="96" width="4" height="4" class="outline" />
+    <rect x="16" y="96" width="4" height="4" class="outline" />
     <rect x="20" y="96" width="4" height="4" class="outline" />
     <rect x="100" y="96" width="4" height="4" class="outline" />
-    <rect x="8" y="100" width="4" height="4" class="outline" />
     <rect x="20" y="100" width="4" height="4" class="outline" />
     <rect x="100" y="100" width="4" height="4" class="outline" />
-    <rect x="8" y="104" width="4" height="4" class="outline" />
-    <rect x="12" y="104" width="4" height="4" class="outline" />
-    <rect x="16" y="104" width="4" height="4" class="outline" />
     <rect x="20" y="104" width="4" height="4" class="outline" />
+    <rect x="24" y="104" width="4" height="4" class="outline" />
+    <rect x="28" y="104" width="4" height="4" class="outline" />
+    <rect x="32" y="104" width="4" height="4" class="outline" />
+    <rect x="36" y="104" width="4" height="4" class="outline" />
+    <rect x="40" y="104" width="4" height="4" class="outline" />
+    <rect x="44" y="104" width="4" height="4" class="outline" />
+    <rect x="48" y="104" width="4" height="4" class="outline" />
+    <rect x="52" y="104" width="4" height="4" class="outline" />
+    <rect x="56" y="104" width="4" height="4" class="outline" />
+    <rect x="60" y="104" width="4" height="4" class="outline" />
+    <rect x="64" y="104" width="4" height="4" class="outline" />
+    <rect x="68" y="104" width="4" height="4" class="outline" />
+    <rect x="72" y="104" width="4" height="4" class="outline" />
+    <rect x="76" y="104" width="4" height="4" class="outline" />
+    <rect x="80" y="104" width="4" height="4" class="outline" />
+    <rect x="84" y="104" width="4" height="4" class="outline" />
+    <rect x="88" y="104" width="4" height="4" class="outline" />
+    <rect x="92" y="104" width="4" height="4" class="outline" />
+    <rect x="96" y="104" width="4" height="4" class="outline" />
     <rect x="100" y="104" width="4" height="4" class="outline" />
-    <rect x="20" y="108" width="4" height="4" class="outline" />
-    <rect x="100" y="108" width="4" height="4" class="outline" />
-    <rect x="20" y="112" width="4" height="4" class="outline" />
-    <rect x="24" y="112" width="4" height="4" class="outline" />
-    <rect x="28" y="112" width="4" height="4" class="outline" />
-    <rect x="32" y="112" width="4" height="4" class="outline" />
-    <rect x="36" y="112" width="4" height="4" class="outline" />
-    <rect x="40" y="112" width="4" height="4" class="outline" />
-    <rect x="44" y="112" width="4" height="4" class="outline" />
-    <rect x="48" y="112" width="4" height="4" class="outline" />
-    <rect x="52" y="112" width="4" height="4" class="outline" />
-    <rect x="56" y="112" width="4" height="4" class="outline" />
-    <rect x="60" y="112" width="4" height="4" class="outline" />
-    <rect x="64" y="112" width="4" height="4" class="outline" />
-    <rect x="68" y="112" width="4" height="4" class="outline" />
-    <rect x="72" y="112" width="4" height="4" class="outline" />
-    <rect x="76" y="112" width="4" height="4" class="outline" />
-    <rect x="80" y="112" width="4" height="4" class="outline" />
-    <rect x="84" y="112" width="4" height="4" class="outline" />
-    <rect x="88" y="112" width="4" height="4" class="outline" />
-    <rect x="92" y="112" width="4" height="4" class="outline" />
-    <rect x="96" y="112" width="4" height="4" class="outline" />
-    <rect x="100" y="112" width="4" height="4" class="outline" />
   </g>
   <g id="body-light">
-    <rect x="72" y="44" width="4" height="4" class="body-light" />
-    <rect x="76" y="44" width="4" height="4" class="body-light" />
-    <rect x="80" y="44" width="4" height="4" class="body-light" />
-    <rect x="84" y="44" width="4" height="4" class="body-light" />
-    <rect x="88" y="44" width="4" height="4" class="body-light" />
-    <rect x="92" y="44" width="4" height="4" class="body-light" />
-    <rect x="96" y="44" width="4" height="4" class="body-light" />
-    <rect x="100" y="44" width="4" height="4" class="body-light" />
-    <rect x="72" y="48" width="4" height="4" class="body-light" />
-    <rect x="76" y="48" width="4" height="4" class="body-light" />
-    <rect x="92" y="48" width="4" height="4" class="body-light" />
-    <rect x="96" y="48" width="4" height="4" class="body-light" />
-    <rect x="100" y="48" width="4" height="4" class="body-light" />
-    <rect x="28" y="88" width="4" height="4" class="body-light" />
-    <rect x="32" y="88" width="4" height="4" class="body-light" />
-    <rect x="40" y="88" width="4" height="4" class="body-light" />
-    <rect x="44" y="88" width="4" height="4" class="body-light" />
-    <rect x="48" y="88" width="4" height="4" class="body-light" />
-    <rect x="52" y="88" width="4" height="4" class="body-light" />
-    <rect x="60" y="88" width="4" height="4" class="body-light" />
-    <rect x="64" y="88" width="4" height="4" class="body-light" />
-    <rect x="68" y="88" width="4" height="4" class="body-light" />
-    <rect x="72" y="88" width="4" height="4" class="body-light" />
-    <rect x="80" y="88" width="4" height="4" class="body-light" />
-    <rect x="84" y="88" width="4" height="4" class="body-light" />
-    <rect x="88" y="88" width="4" height="4" class="body-light" />
-    <rect x="92" y="88" width="4" height="4" class="body-light" />
-    <rect x="12" y="92" width="4" height="4" class="body-light" />
-    <rect x="16" y="92" width="4" height="4" class="body-light" />
-    <rect x="12" y="96" width="4" height="4" class="body-light" />
-    <rect x="16" y="96" width="4" height="4" class="body-light" />
+    <rect x="72" y="36" width="4" height="4" class="body-light" />
+    <rect x="76" y="36" width="4" height="4" class="body-light" />
+    <rect x="80" y="36" width="4" height="4" class="body-light" />
+    <rect x="84" y="36" width="4" height="4" class="body-light" />
+    <rect x="88" y="36" width="4" height="4" class="body-light" />
+    <rect x="92" y="36" width="4" height="4" class="body-light" />
+    <rect x="96" y="36" width="4" height="4" class="body-light" />
+    <rect x="100" y="36" width="4" height="4" class="body-light" />
+    <rect x="72" y="40" width="4" height="4" class="body-light" />
+    <rect x="76" y="40" width="4" height="4" class="body-light" />
+    <rect x="92" y="40" width="4" height="4" class="body-light" />
+    <rect x="96" y="40" width="4" height="4" class="body-light" />
+    <rect x="100" y="40" width="4" height="4" class="body-light" />
+    <rect x="28" y="80" width="4" height="4" class="body-light" />
+    <rect x="32" y="80" width="4" height="4" class="body-light" />
+    <rect x="40" y="80" width="4" height="4" class="body-light" />
+    <rect x="44" y="80" width="4" height="4" class="body-light" />
+    <rect x="48" y="80" width="4" height="4" class="body-light" />
+    <rect x="52" y="80" width="4" height="4" class="body-light" />
+    <rect x="60" y="80" width="4" height="4" class="body-light" />
+    <rect x="64" y="80" width="4" height="4" class="body-light" />
+    <rect x="68" y="80" width="4" height="4" class="body-light" />
+    <rect x="72" y="80" width="4" height="4" class="body-light" />
+    <rect x="80" y="80" width="4" height="4" class="body-light" />
+    <rect x="84" y="80" width="4" height="4" class="body-light" />
+    <rect x="88" y="80" width="4" height="4" class="body-light" />
+    <rect x="92" y="80" width="4" height="4" class="body-light" />
+    <rect x="12" y="84" width="4" height="4" class="body-light" />
+    <rect x="16" y="84" width="4" height="4" class="body-light" />
+    <rect x="12" y="88" width="4" height="4" class="body-light" />
+    <rect x="16" y="88" width="4" height="4" class="body-light" />
   </g>
   <g id="eye-shine">
-    <rect x="80" y="48" width="4" height="4" class="eye-shine" />
-    <rect x="84" y="52" width="4" height="4" class="eye-shine" />
+    <rect x="80" y="40" width="4" height="4" class="eye-shine" />
+    <rect x="84" y="44" width="4" height="4" class="eye-shine" />
   </g>
   <g id="eye-dark">
+    <rect x="84" y="40" width="4" height="4" class="eye-dark" />
+    <rect x="88" y="40" width="4" height="4" class="eye-dark" />
+    <rect x="80" y="44" width="4" height="4" class="eye-dark" />
+    <rect x="88" y="44" width="4" height="4" class="eye-dark" />
+    <rect x="80" y="48" width="4" height="4" class="eye-dark" />
     <rect x="84" y="48" width="4" height="4" class="eye-dark" />
     <rect x="88" y="48" width="4" height="4" class="eye-dark" />
     <rect x="80" y="52" width="4" height="4" class="eye-dark" />
+    <rect x="84" y="52" width="4" height="4" class="eye-dark" />
     <rect x="88" y="52" width="4" height="4" class="eye-dark" />
-    <rect x="80" y="56" width="4" height="4" class="eye-dark" />
-    <rect x="84" y="56" width="4" height="4" class="eye-dark" />
-    <rect x="88" y="56" width="4" height="4" class="eye-dark" />
-    <rect x="80" y="60" width="4" height="4" class="eye-dark" />
-    <rect x="84" y="60" width="4" height="4" class="eye-dark" />
-    <rect x="88" y="60" width="4" height="4" class="eye-dark" />
   </g>
   <g id="body-main">
+    <rect x="72" y="44" width="4" height="4" class="body-main" />
+    <rect x="76" y="44" width="4" height="4" class="body-main" />
+    <rect x="92" y="44" width="4" height="4" class="body-main" />
+    <rect x="96" y="44" width="4" height="4" class="body-main" />
+    <rect x="100" y="44" width="4" height="4" class="body-main" />
+    <rect x="92" y="48" width="4" height="4" class="body-main" />
+    <rect x="96" y="48" width="4" height="4" class="body-main" />
+    <rect x="100" y="48" width="4" height="4" class="body-main" />
     <rect x="72" y="52" width="4" height="4" class="body-main" />
     <rect x="76" y="52" width="4" height="4" class="body-main" />
     <rect x="92" y="52" width="4" height="4" class="body-main" />
     <rect x="96" y="52" width="4" height="4" class="body-main" />
     <rect x="100" y="52" width="4" height="4" class="body-main" />
-    <rect x="92" y="56" width="4" height="4" class="body-main" />
-    <rect x="96" y="56" width="4" height="4" class="body-main" />
+    <rect x="72" y="56" width="4" height="4" class="body-main" />
     <rect x="100" y="56" width="4" height="4" class="body-main" />
-    <rect x="72" y="60" width="4" height="4" class="body-main" />
-    <rect x="76" y="60" width="4" height="4" class="body-main" />
-    <rect x="92" y="60" width="4" height="4" class="body-main" />
-    <rect x="96" y="60" width="4" height="4" class="body-main" />
-    <rect x="100" y="60" width="4" height="4" class="body-main" />
-    <rect x="72" y="64" width="4" height="4" class="body-main" />
-    <rect x="100" y="64" width="4" height="4" class="body-main" />
+    <rect x="80" y="64" width="4" height="4" class="body-main" />
+    <rect x="84" y="64" width="4" height="4" class="body-main" />
+    <rect x="88" y="64" width="4" height="4" class="body-main" />
+    <rect x="80" y="68" width="4" height="4" class="body-main" />
+    <rect x="84" y="68" width="4" height="4" class="body-main" />
+    <rect x="88" y="68" width="4" height="4" class="body-main" />
     <rect x="80" y="72" width="4" height="4" class="body-main" />
     <rect x="84" y="72" width="4" height="4" class="body-main" />
     <rect x="88" y="72" width="4" height="4" class="body-main" />
-    <rect x="80" y="76" width="4" height="4" class="body-main" />
-    <rect x="84" y="76" width="4" height="4" class="body-main" />
-    <rect x="88" y="76" width="4" height="4" class="body-main" />
-    <rect x="80" y="80" width="4" height="4" class="body-main" />
-    <rect x="84" y="80" width="4" height="4" class="body-main" />
-    <rect x="88" y="80" width="4" height="4" class="body-main" />
+    <rect x="24" y="80" width="4" height="4" class="body-main" />
+    <rect x="96" y="80" width="4" height="4" class="body-main" />
+    <rect x="24" y="84" width="4" height="4" class="body-main" />
+    <rect x="28" y="84" width="4" height="4" class="body-main" />
+    <rect x="32" y="84" width="4" height="4" class="body-main" />
+    <rect x="36" y="84" width="4" height="4" class="body-main" />
+    <rect x="40" y="84" width="4" height="4" class="body-main" />
+    <rect x="44" y="84" width="4" height="4" class="body-main" />
+    <rect x="48" y="84" width="4" height="4" class="body-main" />
+    <rect x="76" y="84" width="4" height="4" class="body-main" />
+    <rect x="80" y="84" width="4" height="4" class="body-main" />
+    <rect x="84" y="84" width="4" height="4" class="body-main" />
+    <rect x="88" y="84" width="4" height="4" class="body-main" />
+    <rect x="92" y="84" width="4" height="4" class="body-main" />
+    <rect x="96" y="84" width="4" height="4" class="body-main" />
     <rect x="24" y="88" width="4" height="4" class="body-main" />
+    <rect x="28" y="88" width="4" height="4" class="body-main" />
+    <rect x="32" y="88" width="4" height="4" class="body-main" />
+    <rect x="36" y="88" width="4" height="4" class="body-main" />
+    <rect x="40" y="88" width="4" height="4" class="body-main" />
+    <rect x="44" y="88" width="4" height="4" class="body-main" />
+    <rect x="48" y="88" width="4" height="4" class="body-main" />
+    <rect x="76" y="88" width="4" height="4" class="body-main" />
+    <rect x="80" y="88" width="4" height="4" class="body-main" />
+    <rect x="84" y="88" width="4" height="4" class="body-main" />
+    <rect x="88" y="88" width="4" height="4" class="body-main" />
+    <rect x="92" y="88" width="4" height="4" class="body-main" />
     <rect x="96" y="88" width="4" height="4" class="body-main" />
+    <rect x="12" y="92" width="4" height="4" class="body-main" />
+    <rect x="16" y="92" width="4" height="4" class="body-main" />
     <rect x="24" y="92" width="4" height="4" class="body-main" />
     <rect x="28" y="92" width="4" height="4" class="body-main" />
     <rect x="32" y="92" width="4" height="4" class="body-main" />
@@ -220,46 +248,30 @@
     <rect x="88" y="96" width="4" height="4" class="body-main" />
     <rect x="92" y="96" width="4" height="4" class="body-main" />
     <rect x="96" y="96" width="4" height="4" class="body-main" />
-    <rect x="12" y="100" width="4" height="4" class="body-main" />
-    <rect x="16" y="100" width="4" height="4" class="body-main" />
-    <rect x="24" y="100" width="4" height="4" class="body-main" />
-    <rect x="28" y="100" width="4" height="4" class="body-main" />
-    <rect x="32" y="100" width="4" height="4" class="body-main" />
-    <rect x="36" y="100" width="4" height="4" class="body-main" />
-    <rect x="40" y="100" width="4" height="4" class="body-main" />
-    <rect x="44" y="100" width="4" height="4" class="body-main" />
-    <rect x="48" y="100" width="4" height="4" class="body-main" />
-    <rect x="76" y="100" width="4" height="4" class="body-main" />
-    <rect x="80" y="100" width="4" height="4" class="body-main" />
-    <rect x="84" y="100" width="4" height="4" class="body-main" />
-    <rect x="88" y="100" width="4" height="4" class="body-main" />
-    <rect x="92" y="100" width="4" height="4" class="body-main" />
-    <rect x="96" y="100" width="4" height="4" class="body-main" />
-    <rect x="24" y="104" width="4" height="4" class="body-main" />
-    <rect x="28" y="104" width="4" height="4" class="body-main" />
-    <rect x="32" y="104" width="4" height="4" class="body-main" />
-    <rect x="36" y="104" width="4" height="4" class="body-main" />
-    <rect x="40" y="104" width="4" height="4" class="body-main" />
-    <rect x="44" y="104" width="4" height="4" class="body-main" />
-    <rect x="48" y="104" width="4" height="4" class="body-main" />
-    <rect x="76" y="104" width="4" height="4" class="body-main" />
-    <rect x="80" y="104" width="4" height="4" class="body-main" />
-    <rect x="84" y="104" width="4" height="4" class="body-main" />
-    <rect x="88" y="104" width="4" height="4" class="body-main" />
-    <rect x="92" y="104" width="4" height="4" class="body-main" />
-    <rect x="96" y="104" width="4" height="4" class="body-main" />
   </g>
   <g id="blush">
-    <rect x="72" y="56" width="4" height="4" class="blush" />
-    <rect x="76" y="56" width="4" height="4" class="blush" />
+    <rect x="72" y="48" width="4" height="4" class="blush" />
+    <rect x="76" y="48" width="4" height="4" class="blush" />
   </g>
   <g id="belly">
-    <rect x="76" y="64" width="4" height="4" class="belly" />
-    <rect x="80" y="64" width="4" height="4" class="belly" />
-    <rect x="84" y="64" width="4" height="4" class="belly" />
-    <rect x="88" y="64" width="4" height="4" class="belly" />
-    <rect x="92" y="64" width="4" height="4" class="belly" />
-    <rect x="96" y="64" width="4" height="4" class="belly" />
+    <rect x="76" y="56" width="4" height="4" class="belly" />
+    <rect x="80" y="56" width="4" height="4" class="belly" />
+    <rect x="84" y="56" width="4" height="4" class="belly" />
+    <rect x="88" y="56" width="4" height="4" class="belly" />
+    <rect x="92" y="56" width="4" height="4" class="belly" />
+    <rect x="96" y="56" width="4" height="4" class="belly" />
+    <rect x="52" y="84" width="4" height="4" class="belly" />
+    <rect x="56" y="84" width="4" height="4" class="belly" />
+    <rect x="60" y="84" width="4" height="4" class="belly" />
+    <rect x="64" y="84" width="4" height="4" class="belly" />
+    <rect x="68" y="84" width="4" height="4" class="belly" />
+    <rect x="72" y="84" width="4" height="4" class="belly" />
+    <rect x="52" y="88" width="4" height="4" class="belly" />
+    <rect x="56" y="88" width="4" height="4" class="belly" />
+    <rect x="60" y="88" width="4" height="4" class="belly" />
+    <rect x="64" y="88" width="4" height="4" class="belly" />
+    <rect x="68" y="88" width="4" height="4" class="belly" />
+    <rect x="72" y="88" width="4" height="4" class="belly" />
     <rect x="52" y="92" width="4" height="4" class="belly" />
     <rect x="56" y="92" width="4" height="4" class="belly" />
     <rect x="60" y="92" width="4" height="4" class="belly" />
@@ -272,41 +284,29 @@
     <rect x="64" y="96" width="4" height="4" class="belly" />
     <rect x="68" y="96" width="4" height="4" class="belly" />
     <rect x="72" y="96" width="4" height="4" class="belly" />
-    <rect x="52" y="100" width="4" height="4" class="belly" />
-    <rect x="56" y="100" width="4" height="4" class="belly" />
-    <rect x="60" y="100" width="4" height="4" class="belly" />
-    <rect x="64" y="100" width="4" height="4" class="belly" />
-    <rect x="68" y="100" width="4" height="4" class="belly" />
-    <rect x="72" y="100" width="4" height="4" class="belly" />
-    <rect x="52" y="104" width="4" height="4" class="belly" />
-    <rect x="56" y="104" width="4" height="4" class="belly" />
-    <rect x="60" y="104" width="4" height="4" class="belly" />
-    <rect x="64" y="104" width="4" height="4" class="belly" />
-    <rect x="68" y="104" width="4" height="4" class="belly" />
-    <rect x="72" y="104" width="4" height="4" class="belly" />
   </g>
   <g id="body-shadow">
-    <rect x="36" y="88" width="4" height="4" class="body-shadow" />
-    <rect x="56" y="88" width="4" height="4" class="body-shadow" />
-    <rect x="76" y="88" width="4" height="4" class="body-shadow" />
-    <rect x="24" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="28" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="32" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="36" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="40" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="44" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="48" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="52" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="56" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="60" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="64" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="68" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="72" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="76" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="80" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="84" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="88" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="92" y="108" width="4" height="4" class="body-shadow" />
-    <rect x="96" y="108" width="4" height="4" class="body-shadow" />
+    <rect x="36" y="80" width="4" height="4" class="body-shadow" />
+    <rect x="56" y="80" width="4" height="4" class="body-shadow" />
+    <rect x="76" y="80" width="4" height="4" class="body-shadow" />
+    <rect x="24" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="28" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="32" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="36" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="40" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="44" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="48" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="52" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="56" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="60" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="64" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="68" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="72" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="76" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="80" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="84" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="88" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="92" y="100" width="4" height="4" class="body-shadow" />
+    <rect x="96" y="100" width="4" height="4" class="body-shadow" />
   </g>
 </svg>

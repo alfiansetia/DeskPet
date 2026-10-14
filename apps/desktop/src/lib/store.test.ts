@@ -16,6 +16,7 @@ describe("settings persistence", () => {
       prayerBubbleEnabled: false,
       timerBadgeEnabled: false,
       timerDoneAlertEnabled: false,
+      centerOnAlert: false,
       wanderEnabled: false,
     });
     // Simulasi restart: baca ulang dari storage seperti useState(() => loadSettings()).
@@ -29,6 +30,7 @@ describe("settings persistence", () => {
     expect(reloaded.prayerBubbleEnabled).toBe(false);
     expect(reloaded.timerBadgeEnabled).toBe(false);
     expect(reloaded.timerDoneAlertEnabled).toBe(false);
+    expect(reloaded.centerOnAlert).toBe(false);
     expect(reloaded.wanderEnabled).toBe(false);
     expect(reloaded.telemetryEnabled).toBe(false);
   });
@@ -36,6 +38,8 @@ describe("settings persistence", () => {
     localStorage.setItem("deskpet:settings", JSON.stringify({ alwaysOnTop: false }));
     const reloaded = loadSettings();
     expect(reloaded.alwaysOnTop).toBe(false);
+    expect(reloaded.centerOnAlert).toBe(true);
+    expect(reloaded.tempBubbleEnabled).toBe(true);
     expect(reloaded.prayerCityId).toBe(DEFAULT_SETTINGS.prayerCityId);
     expect(reloaded.prayerMiniEnabled).toBe(true);
     expect(reloaded.prayerBubbleEnabled).toBe(true);

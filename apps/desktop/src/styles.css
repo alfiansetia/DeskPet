@@ -33,7 +33,10 @@ html, body, #root {
    Never use `-webkit-app-region: drag` here: on Windows a drag region is hit-tested
    as HTCAPTION (title-bar), so right-click opens the OS system menu
    (Restore/Move/Exit) and the webview never receives the contextmenu event. */
-.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; position: relative; }
+.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; position: relative; display: flex; align-items: center; justify-content: center; }
+/* Wrapper punya ukuran layout eksplisit (= ukuran visual hasil scale, lihat
+   petWrapBox), sementara isi 128px dibiarkan overflow dan dipusatkan flex
+   agar tepat mengisi box setelah di-scale — tanpa ini pet bergeser. */
 .dp-pet-wrap:active { cursor: grabbing; }
 
 /* Placeholder pastel cat */
@@ -310,7 +313,7 @@ html, body, #root {
 .dp-speech {
   position: relative;
   z-index: 30;
-  margin-bottom: 2px;
+  margin-bottom: 0;
   width: max-content;
   max-width: min(320px, calc(100vw - 24px));
   background: #ffffff;
@@ -340,7 +343,7 @@ html, body, #root {
 }
 .dp-bubble-mini {
   z-index: 29;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   max-width: calc(100vw - 24px);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -394,3 +397,24 @@ html, body, #root {
 
 /* Placeholder fallback kodok: geser hue ungu -> hijau */
 .dp-pet--species-frog:not(.dp-pet--has-sprite) { filter: hue-rotate(-125deg) saturate(1.1); }
+
+/* Bubble suhu: pill kecil menumpuk DI ATAS pill sholat (urutan DOM = urutan tumpuk) */
+.dp-bubble-temp {
+  z-index: 28;
+  margin-bottom: 2px;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(34, 34, 58, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--dp-text);
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(34, 34, 58, 0.12);
+  -webkit-app-region: no-drag;
+}
+.dp-bubble-temp:hover { border-color: var(--dp-primary); }

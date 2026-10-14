@@ -168,6 +168,11 @@ function drawFrog(g, p = {}) {
 }
 
 // ---- definisi animasi ----
+// LIFT (grid rows; 1 row = 4 source px): body digeser ke atas agar gap
+// bubble-atas vs badge-bawah seimbang (idle T=40/B=15 -> ~T32/B23).
+// Ikon digambar TERPISAH setelah body sehingga posisi ikon (margin atas)
+// tidak ikut bergeser.
+const LIFT = 2;
 function framesIdle() {
   return [
     {},
@@ -246,7 +251,9 @@ const ANIMATIONS = {
 
 function renderFrame(params) {
   const g = newGrid();
-  drawFrog(g, params);
+  // Body diangkat LIFT; ikon tetap di koordinat asli (pakai margin atas frame).
+  const { dx, dy, ...rest } = params;
+  drawFrog(g, { ...rest, dx, dy: (dy || 0) - LIFT });
   for (const ic of params.icons || []) {
     const c = ic.k === "heart" || ic.k === "heartSm" ? C.blush
       : ic.k === "excl" ? C.amber : ic.k === "clock" ? C.amber : C.shine;

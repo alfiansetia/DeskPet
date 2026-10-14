@@ -132,7 +132,11 @@ function drawSnake(g, p = {}) {
   return { hx, hy };
 }
 
-// ---- definisi animasi: list frame params + ikon per frame ----
+// LIFT (grid rows; 1 row = 4 source px): body digeser ke atas agar gap
+// bubble-atas vs badge-bawah seimbang (idle T=40/B=13 -> ~T32/B21).
+// Ikon digambar TERPISAH setelah body sehingga posisi ikon (margin atas)
+// tidak ikut bergeser.
+const LIFT = 2;
 function framesIdle() {
   return [
     { headDY: 0 },
@@ -160,7 +164,7 @@ function framesJump() {
   return [
     { squash: 1, headDY: 1 },                       // jongkok
     { dy: -2, neckH: 7, headDY: -1 },               // naik
-    { dy: -4, neckH: 8, headDY: -2, tongue: "long", eye: "wide" }, // puncak
+    { dy: -2, neckH: 8, headDY: -2, tongue: "long", eye: "wide" }, // puncak (dibatasi agar muat setelah LIFT)
     { squash: 1, headDY: 1, eye: "blink" },         // mendarat
   ];
 }
@@ -209,13 +213,14 @@ const ANIMATIONS = {
 
 function renderFrame(params) {
   const g = newGrid();
-  const { hx } = drawSnake(g, params);
+  // Body diangkat LIFT; ikon tetap di koordinat asli (pakai margin atas frame).
+  const { dx, dy, ...rest } = params;
+  drawSnake(g, { ...rest, dx, dy: (dy || 0) - LIFT });
   for (const ic of params.icons || []) {
     const c = ic.k === "heart" || ic.k === "heartSm" ? C.blush
       : ic.k === "excl" ? C.amber : ic.k === "clock" ? C.amber : C.shine;
     bitmap(g, ic.x, ic.y, ICON[ic.k], c);
   }
-  void hx;
   return g;
 }
 

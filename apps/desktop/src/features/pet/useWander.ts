@@ -1,5 +1,5 @@
 /** Autonomous wander engine (PRD §5.1 "walk"). Moves the Tauri window; CSS fallback in preview. */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import type { PetState } from "./petStateMachine";
@@ -45,6 +45,15 @@ export interface WorkArea { left: number; top: number; right: number; bottom: nu
 
 export function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
+}
+
+/**
+ * Keputusan auto-center saat alert penting: user bisa mematikan lewat
+ * `centerOnAlert` (simpanan lama tanpa field = tetap aktif); panel yang
+ * sedang terbuka tidak diganggu posisinya.
+ */
+export function shouldCenterPet(centerOnAlert: boolean | undefined, panelOpen: boolean): boolean {
+  return centerOnAlert !== false && !panelOpen;
 }
 
 /** Padding sprite (CSS px) dari rect .dp-pet-wrap terhadap viewport window. */
@@ -201,8 +210,8 @@ export function useWander({
           // tight mengikuti sprite (128px*scale + breathing), melebar saat
           // pill countdown / bubble / alert. Fallback pakai innerWidth agar
           // tetap dinamis bila outerSize gagal dibaca.
-          let winW = Math.round((window.innerWidth || 160) * scale);
-          let winH = Math.round((window.innerHeight || 168) * scale);
+          let winW = Math.round((window.innerWidth || 96) * scale);
+          let winH = Math.round((window.innerHeight || 102) * scale);
           try {
             const s = await w.outerSize();
             if (s.width > 0 && s.height > 0) { winW = s.width; winH = s.height; }
@@ -212,8 +221,8 @@ export function useWander({
           // begitu batas mentok cocok di semua ukuran window & skala device.
           let pads: WanderPads = { padL: 16, padR: 16, padT: 16, padB: 16 };
           try {
-            const vw = window.innerWidth || 160;
-            const vh = window.innerHeight || 168;
+            const vw = window.innerWidth || 96;
+            const vh = window.innerHeight || 102;
             const r = document.querySelector(".dp-pet-wrap")?.getBoundingClientRect();
             if (r && r.width > 0 && r.height > 0) pads = spritePads(vw, vh, r);
           } catch { /* fallback 16 */ }
@@ -485,5 +494,30 @@ export function useWander({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, wanderPace, wanderDirection, reducedMotion, paused, blocked]);
 
-  return { offset, facing, walkSpeed };
+  // Kembalikan pet ke tengah layar saat alert penting agar jadi fokus.
+  // Tauri: pindahkan window OS ke tengah monitor aktif. Web preview:
+  // reset offset CSS ke tengah. Selalu resolve (fallback aman) agar
+  // caller cukup `void centerPet()`.
+  const centerPet = useCallback(async (): Promise<void> => {
+    try {
+      const w = getCurrentWindow();
+      const scale = await w.scaleFactor().catch(() => 1);
+      const mon = await currentMonitor().catch(() => null);
+      if (!mon) throw new Error("no monitor info");
+      let winW = Math.round((window.innerWidth || 96) * scale);
+      let winH = Math.round((window.innerHeight || 102) * scale);
+      try {
+        const s = await w.outerSize();
+        if (s.width > 0 && s.height > 0) { winW = s.width; winH = s.height; }
+      } catch { /* fallback innerWidth */ }
+      const cx = Math.round(mon.position.x + mon.size.width / 2 - winW / 2);
+      const cy = Math.round(mon.position.y + mon.size.height / 2 - winH / 2);
+      await w.setPosition(new PhysicalPosition(cx, cy));
+    } catch {
+      offsetRef.current = { x: 0, y: 0 };
+      setOffset({ x: 0, y: 0 });
+    }
+  }, []);
+
+  return { offset, facing, walkSpeed, centerPet };
 }

@@ -6,6 +6,7 @@ import {
   type PrayerCity, type PrayerDay,
 } from "./prayer";
 import { loadSettings, saveSettings, store, uid, type DeskSettings } from "../../lib/store";
+import { getCachedWeather, getWeather, type WeatherNow } from "../weather/weather";
 import { toast } from "../../lib/notify";
 import { speak } from "../../lib/tts";
 import { Icon } from "../../components/Icon";
@@ -23,6 +24,7 @@ export function PrayerView({ settings, setSettings, bump }: Props) {
   const [cities, setCities] = useState<PrayerCity[]>(POPULAR_CITIES);
   const [q, setQ] = useState("");
   const [now, setNow] = useState(() => new Date());
+  const [wx, setWx] = useState<WeatherNow | null>(() => getCachedWeather(settings.prayerCityId ?? "1301"));
 
   const upd = (patch: Partial<DeskSettings>) => {
     const next = { ...settings, ...patch, telemetryEnabled: false as const };
@@ -30,17 +32,29 @@ export function PrayerView({ settings, setSettings, bump }: Props) {
     setSettings(next);
   };
 
-  const load = async (cityId: string, cityName: string) => {
+  const load = async (cityId: string, cityName: string, opts?: { refresh?: boolean }) => {
     setLoading(true);
     setErr("");
+    if (loadSettings().weatherEnabled !== false) {
+      void getWeather(cityId, cityName).then(setWx);
+    }
+    // Cache-first: jadwal harian statis — tanpa network & tanpa audit bila cache ada.
+    if (!opts?.refresh) {
+      const hit = getCachedPrayerDay(cityId);
+      if (hit) { setDay(hit); setLoading(false); return; }
+    }
     const res = await getPrayerDay(cityId, cityName, new Date());
     setLoading(false);
     if (res) {
       setDay(res);
-      store.audit.push({
-        id: uid("a"), actionId: "prayer.fetch", source: "prayer",
-        status: "executed", confirmationRequired: false, createdAt: new Date().toISOString(),
-      });
+      // Audit hanya akses network sungguhan (transparansi akses eksternal),
+      // bukan sajian cache lokal.
+      if (res.source !== "cache") {
+        store.audit.push({
+          id: uid("a"), actionId: "prayer.fetch", source: "prayer",
+          status: "executed", confirmationRequired: false, createdAt: new Date().toISOString(),
+        });
+      }
     } else {
       setErr("Gagal memuat jadwal (offline & belum ada cache). Coba lagi saat online.");
     }
@@ -96,7 +110,7 @@ export function PrayerView({ settings, setSettings, bump }: Props) {
   return (
     <div>
       <div className="dp-muted">
-        <span className="dp-line"><Icon name="moonStar" size={12} /> Sumber MyQuran (Kemenag) + fallback Aladhan · opt-in · cache offline {day ? `· ${day.source}` : ""} · {toYMD(new Date())}</span>
+        <span className="dp-line"><Icon name="moonStar" size={12} /> Sumber MyQuran (Kemenag) + fallback Aladhan · cuaca Open-Meteo · opt-in · cache offline {day ? `· ${day.source}` : ""} · {toYMD(new Date())}</span>
       </div>
 
       <label className="dp-check">
@@ -119,6 +133,20 @@ export function PrayerView({ settings, setSettings, bump }: Props) {
           onChange={(e) => upd({ prayerAdzanEnabled: e.target.checked })} />
         Adzan saat masuk waktu (bunyi + suara)
       </label>
+      <label className="dp-check">
+        <input type="checkbox" checked={settings.weatherEnabled !== false}
+          onChange={(e) => {
+            upd({ weatherEnabled: e.target.checked });
+            if (e.target.checked) void getWeather(settings.prayerCityId, settings.prayerCityName).then(setWx);
+            else setWx(null);
+          }} />
+        Tampilkan cuaca kota ini (Open-Meteo, tanpa key)
+      </label>
+      <label className="dp-check">
+        <input type="checkbox" checked={settings.tempBubbleEnabled !== false}
+          onChange={(e) => upd({ tempBubbleEnabled: e.target.checked })} />
+        Tampilkan bubble suhu di atas pet (menumpuk di atas pill sholat)
+      </label>
       <div className="dp-row" style={{ alignItems: "center" }}>
         <label htmlFor="dp-prayer-before" className="dp-muted" style={{ minWidth: 120 }}>Ingatkan sebelum:</label>
         <select id="dp-prayer-before" className="dp-in" style={{ maxWidth: 130 }}
@@ -135,7 +163,7 @@ export function PrayerView({ settings, setSettings, bump }: Props) {
       <div className="dp-row">
         <input className="dp-in" value={q} onChange={(e) => setQ(e.target.value)}
           placeholder="Cari kota… (mis. Surabaya)" aria-label="Cari kota" />
-        <button className="dp-btn sm" onClick={() => void load(settings.prayerCityId, settings.prayerCityName)} title="Muat ulang jadwal">
+        <button className="dp-btn sm" onClick={() => void load(settings.prayerCityId, settings.prayerCityName, { refresh: true })} title="Muat ulang jadwal dari network">
           {loading ? "…" : <Icon name="rotate" size={13} />}
         </button>
       </div>
@@ -153,6 +181,19 @@ export function PrayerView({ settings, setSettings, bump }: Props) {
         </select>
       </div>
       <div className="dp-muted">{settings.prayerCityName} · {cities.length} kota tersedia</div>
+
+      {settings.weatherEnabled !== false && (
+        <div className="dp-confirm" data-testid="weather-now">
+          {wx ? (
+            <span className="dp-line">
+              <Icon name={wx.icon} size={14} /> <b>{wx.tempC}°C</b> {wx.label}
+              <span className="dp-muted">terasa {wx.feelsLikeC}° · lembap {wx.humidity}% · angin {wx.windKph} km/j{wx.stale ? " · offline" : ""}</span>
+            </span>
+          ) : (
+            <span className="dp-muted"><span className="dp-line"><Icon name="thermo" size={13} /> Cuaca belum tersedia (offline & belum ada cache).</span></span>
+          )}
+        </div>
+      )}
 
       {err && <div className="dp-warn">{err}</div>}
 

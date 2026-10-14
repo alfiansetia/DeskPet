@@ -11,7 +11,8 @@ export type IconName =
   | "download" | "upload" | "zap" | "move" | "moveX"
   | "zoomIn" | "zoomOut" | "rotate" | "pin" | "activity"
   | "eyeOff" | "power" | "info" | "volume" | "hourglass"
-  | "history" | "trash" | "chevronDown" | "star";
+  | "history" | "trash" | "chevronDown" | "star"
+  | "cloud" | "cloudRain" | "thermo";
 
 const P: Record<IconName, ReactNode> = {
   chat: <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />,
@@ -51,6 +52,9 @@ const P: Record<IconName, ReactNode> = {
   trash: <><path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /></>,
   chevronDown: <path d="m6 9 6 6 6-6" />,
   star: <path fill="currentColor" stroke="none" d="M12 2l2.9 6.26 6.6 1.04-4.75 4.87L17.8 21 12 17.77 6.2 21l1.05-6.83L2.5 9.3l6.6-1.04z" />,
+  cloud: <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />,
+  cloudRain: <><path d="M4 14.9A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.24" /><path d="M16 14v6" /><path d="M8 14v6" /><path d="M12 16v6" /></>,
+  thermo: <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />,
 };
 
 export const ICON_NAMES = Object.keys(P) as IconName[];

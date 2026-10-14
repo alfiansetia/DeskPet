@@ -11,7 +11,7 @@ import { CAT_PALETTES, CUSTOM_PALETTE_ID } from "../features/pet/palettes";
 import { PET_SPECIES, type PetSpecies } from "../features/pet/species";
 import { PrayerView } from "../features/prayer/PrayerView";
 
-export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "settings";
+export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "settings" | "log";
 
 interface Props {
   tab: PanelTab;
@@ -31,6 +31,7 @@ const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
   { id: "timer", icon: "timer", title: "Timer" }, { id: "calendar", icon: "calendar", title: "Kalender" },
   { id: "prayer", icon: "moonStar", title: "Jadwal Sholat" },
   { id: "auto", icon: "settings", title: "Otomatisasi" }, { id: "settings", icon: "sliders", title: "Pengaturan" },
+  { id: "log", icon: "history", title: "Log" },
 ];
 
 export function MainPanel(p: Props) {
@@ -56,6 +57,7 @@ export function MainPanel(p: Props) {
         {p.tab === "prayer" && <PrayerView settings={p.settings} setSettings={p.setSettings} bump={p.bump} />}
         {p.tab === "auto" && <Automations bump={p.bump} rkey={p.refreshKey} />}
         {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} />}
+        {p.tab === "log" && <LogView />}
       </div>
     </div>
   );
@@ -506,6 +508,7 @@ function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSe
   return (
     <div className="dp-settings">
       <label className="dp-check"><input type="checkbox" checked={settings.wanderEnabled} onChange={(e) => upd({ wanderEnabled: e.target.checked })} /> Jalan otomatis (walk)</label>
+      <label className="dp-check"><input type="checkbox" checked={settings.centerOnAlert !== false} onChange={(e) => upd({ centerOnAlert: e.target.checked })} /> Kembali ke tengah layar saat alert penting</label>
       {settings.wanderEnabled && (
         <div style={{ marginLeft: 22, marginTop: -2, marginBottom: 8, display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="dp-row" style={{ alignItems: "center", margin: 0 }}>
@@ -625,18 +628,38 @@ function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSe
         <button className="dp-btn sm" onClick={() => fileRef.current?.click()}><Icon name="upload" size={13} /> Restore</button>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); }} /></div>
       {savedAt && <div className="dp-muted" data-testid="settings-saved"><span className="dp-line"><Icon name="check" size={12} /> Tersimpan {savedAt} (lokal, tanpa cloud)</span></div>}
-      <div className="dp-muted"><span className="dp-line"><Icon name="check" size={12} /> Local-first · telemetry OFF permanen · Gmail/Google opt-in (belum terhubung) · audit tersimpan lokal ({store.audit.all().length} entri).</span></div>
-      <AuditView />
+      <div className="dp-muted"><span className="dp-line"><Icon name="check" size={12} /> Local-first · telemetry OFF permanen · Gmail/Google opt-in (belum terhubung) · log aktivitas ada di tab Log.</span></div>
     </div>
   );
 }
 
-function AuditView() {
-  const [items] = useState(() => store.audit.all().slice(0, 20));
-  if (items.length === 0) return null;
+/* ---------------- Log (audit lokal) ---------------- */
+function LogView() {
+  const [items, setItems] = useState(() => store.audit.all().slice(0, 50));
+  const clear = () => {
+    store.audit.clear();
+    setItems([]);
+    toast("Log dihapus", "Audit lokal dikosongkan.", "info");
+  };
   return (
-    <div className="dp-list">
-      {items.map((a) => <div key={a.id} className="dp-item"><div><b>{a.actionId}</b><div className="dp-muted">{a.source} · {a.status} · {new Date(a.createdAt).toLocaleString("id-ID")}</div></div></div>)}
+    <div>
+      <div className="dp-muted">Catatan aksi & akses eksternal (metadata saja, tanpa isi privat). Hanya akses network sungguhan yang dicatat — sajian cache tidak masuk log.</div>
+      <div className="dp-row" style={{ alignItems: "center" }}>
+        <span className="dp-muted">{items.length} entri</span>
+        <button className="dp-btn sm" onClick={clear} disabled={items.length === 0} title="Hapus semua log">
+          <Icon name="trash" size={13} /> Hapus
+        </button>
+      </div>
+      <div className="dp-list" data-testid="audit-list">
+        {items.map((a) => (
+          <div key={a.id} className="dp-item">
+            <div><b>{a.actionId}</b>
+              <div className="dp-muted">{a.source} · {a.status}{a.confirmationRequired ? " · perlu konfirmasi" : ""} · {new Date(a.createdAt).toLocaleString("id-ID")}</div>
+            </div>
+          </div>
+        ))}
+        {items.length === 0 && <div className="dp-muted">Belum ada aktivitas tercatat.</div>}
+      </div>
     </div>
   );
 }
