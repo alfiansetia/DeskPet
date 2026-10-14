@@ -62,10 +62,11 @@ Buka browser di [http://localhost:1420](http://localhost:1420). Status bar akan 
 
 ## 🎮 Kontrol & Interaksi Karakter
 
-- **Drag & Drop**: Klik kiri tahan + geser pada karakter untuk memindahkannya. Ada threshold 5px sehingga klik biasa tidak dikira drag (tidak bocor ke UI belakang).
+- **Drag & Drop**: Klik kiri tahan + geser pada karakter untuk memindahkannya. Ada threshold 5px sehingga klik biasa tidak dikira drag (tidak bocor ke UI belakang). Lepas drag otomatis kembali ke `idle` tanpa perlu klik lagi (dideteksi via `window mouseup/blur` karena `startDragging()` mengambil alih event OS).
 - **Sapa**: Klik (tap) pada pet memicu animasi gembira (`react`). Dobel-klik membuka panel Asisten.
-- **Menu klik kanan**: Klik kanan pada pet membuka menu konteks (Asisten, Pengingat, Tugas, Catatan, Timer, Kalender, Otomatisasi, Pengaturan, jalan otomatis, selalu-di-atas, gerakan tenang, tidur/bangun, sembunyikan, keluar). Tidak ada lagi bar opsi permanen di bawah pet.
-- **Jalan otomatis**: Pet berjalan sendiri tiap 5–11 detik (state `walk` + jendela berpindah, sprite menghadap arah jalan). Bisa dimatikan via menu / Pengaturan. Otomatis jeda saat menu/panel terbuka, saat di-drag, tidur, atau reduced-motion.
+- **Menu klik kanan**: Klik kanan pada pet membuka menu konteks (Asisten, Pengingat, Tugas, Catatan, Timer, Kalender, Otomatisasi, Pengaturan, jalan otomatis, ukuran pet, selalu-di-atas, gerakan tenang, tidur/bangun, sembunyikan, keluar). Tidak ada lagi bar opsi permanen di bawah pet.
+- **Jalan otomatis**: Pet berjalan sendiri tiap 5–11 detik ke arah acak kiri/kanan + naik/turun (state `walk` + jendela berpindah, sprite menghadap arah jalan). Bisa dimatikan via menu / Pengaturan. Otomatis jeda saat menu/panel terbuka, saat di-drag, tidur, atau reduced-motion. Mode web-preview menggeser CSS di sumbu X dan Y.
+- **Ukuran pet (scale)**: Atur 50%–200% via menu klik kanan (🔍＋/🔍－/↩) atau slider di Pengaturan. Berlaku untuk sprite maupun placeholder, menghadap kiri/kanan tetap benar (`scale(facing*scale, scale)`), dan ukuran jendela Tauri menyesuaikan agar tidak terpotong.
 - **Sembunyikan / Tampilkan**: via menu klik kanan → 🙈, tray (Show/Hide), atau shortcut `Ctrl + Shift + D` (Windows) / `Cmd + Shift + D` (macOS).
 
 ---

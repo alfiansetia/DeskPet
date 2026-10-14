@@ -59,24 +59,45 @@ const K = {
   settings: "deskpet:settings",
 };
 
+export type WanderPace = "random" | "slow" | "normal" | "fast";
+export type WanderDirection = "random" | "horizontal" | "vertical";
+
 export interface DeskSettings {
   alwaysOnTop: boolean; reducedMotion: boolean;
   soundMuted: boolean; speechMuted: boolean;
-  wanderEnabled: boolean; quietHoursEnabled: boolean;
+  wanderEnabled: boolean;
+  wanderPace: WanderPace;
+  wanderDirection: WanderDirection;
+  quietHoursEnabled: boolean;
   quietStart: number; quietEnd: number;
   characterId: string; telemetryEnabled: false;
+  petScale: number;
 }
 
 export const DEFAULT_SETTINGS: DeskSettings = {
   alwaysOnTop: true, reducedMotion: false,
   soundMuted: false, speechMuted: false,
-  wanderEnabled: true, quietHoursEnabled: true,
+  wanderEnabled: true,
+  wanderPace: "random",
+  wanderDirection: "random",
+  quietHoursEnabled: true,
   quietStart: 22, quietEnd: 7,
   characterId: "deskpet.cat.lavender", telemetryEnabled: false,
+  petScale: 1,
 };
 
 export function loadSettings(): DeskSettings {
-  return { ...DEFAULT_SETTINGS, ...loadJSON<Partial<DeskSettings>>(K.settings, {}) };
+  const raw = loadJSON<Partial<DeskSettings>>(K.settings, {});
+  const scale = typeof raw.petScale === "number" && Number.isFinite(raw.petScale)
+    ? Math.min(2, Math.max(0.5, raw.petScale))
+    : 1;
+  const wanderPace = ["random", "slow", "normal", "fast"].includes(raw.wanderPace as string)
+    ? (raw.wanderPace as WanderPace)
+    : "random";
+  const wanderDirection = ["random", "horizontal", "vertical"].includes(raw.wanderDirection as string)
+    ? (raw.wanderDirection as WanderDirection)
+    : "random";
+  return { ...DEFAULT_SETTINGS, ...raw, petScale: scale, wanderPace, wanderDirection };
 }
 export function saveSettings(s: DeskSettings): void {
   saveJSON(K.settings, { ...s, telemetryEnabled: false });

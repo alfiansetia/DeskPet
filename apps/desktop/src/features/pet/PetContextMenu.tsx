@@ -1,13 +1,20 @@
+import type { WanderPace, WanderDirection } from "../../lib/store";
+
 /** Right-click context menu (PRD §6 quick menu). Replaces the always-visible option bar. */
 export type MenuAction =
   | "open-assistant" | "open-reminders" | "open-tasks" | "open-notes"
   | "open-timer" | "open-calendar" | "open-automations" | "open-settings"
-  | "toggle-wander" | "toggle-top" | "toggle-motion"
+  | "toggle-wander" | "cycle-wander-pace" | "cycle-wander-dir" | "toggle-top" | "toggle-motion"
+  | "scale-up" | "scale-down" | "scale-reset"
   | "sleep" | "wake" | "hide" | "quit";
 
 interface Props {
   x: number; y: number;
-  wanderEnabled: boolean; alwaysOnTop: boolean; reducedMotion: boolean; sleeping: boolean;
+  wanderEnabled: boolean;
+  wanderPace?: WanderPace;
+  wanderDirection?: WanderDirection;
+  alwaysOnTop: boolean; reducedMotion: boolean; sleeping: boolean;
+  petScale?: number;
   onPick: (a: MenuAction) => void;
   onClose: () => void;
 }
@@ -22,8 +29,13 @@ const ITEMS: { id: MenuAction; label: string; hint?: string; sepAfter?: boolean 
   { id: "open-automations", label: "⚙️ Otomatisasi" },
   { id: "open-settings", label: "🔧 Pengaturan", sepAfter: true },
   { id: "toggle-wander", label: "🚶 Jalan otomatis" },
+  { id: "cycle-wander-pace", label: "⚡ Kecepatan jalan" },
+  { id: "cycle-wander-dir", label: "↔️ Arah jalan" },
   { id: "toggle-top", label: "📌 Selalu di atas" },
   { id: "toggle-motion", label: "🎭 Gerakan tenang", sepAfter: true },
+  { id: "scale-up", label: "🔍＋ Perbesar" },
+  { id: "scale-down", label: "🔍－ Perkecil" },
+  { id: "scale-reset", label: "↩ Ukuran normal", sepAfter: true },
   { id: "sleep", label: "💤 Tidur" },
   { id: "wake", label: "☀️ Bangun" },
   { id: "hide", label: "🙈 Sembunyikan", hint: "Ctrl+Shift+D" },
@@ -44,6 +56,33 @@ export function PetContextMenu(props: Props) {
     if (id === "toggle-top") return props.alwaysOnTop ? "✓" : "";
     if (id === "toggle-motion") return props.reducedMotion ? "✓" : "";
     if (id === "sleep") return props.sleeping ? "✓" : "";
+    return "";
+  };
+
+  const hint = (id: MenuAction): string => {
+    if (id === "cycle-wander-pace") {
+      const paceLabels: Record<string, string> = {
+        random: "Acak",
+        slow: "Pelan",
+        fast: "Lari",
+        normal: "Normal",
+      };
+      return paceLabels[props.wanderPace ?? "random"] ?? "Acak";
+    }
+    if (id === "cycle-wander-dir") {
+      const dirLabels: Record<string, string> = {
+        random: "Acak",
+        horizontal: "Kiri-Kanan",
+        vertical: "Atas-Bawah",
+      };
+      return dirLabels[props.wanderDirection ?? "random"] ?? "Acak";
+    }
+    if (id === "scale-up" || id === "scale-down" || id === "scale-reset") {
+      const pct = Math.round((props.petScale ?? 1) * 100);
+      if (id === "scale-up") return pct >= 200 ? "max" : `${pct}%`;
+      if (id === "scale-down") return pct <= 50 ? "min" : `${pct}%`;
+      return `${pct}%`;
+    }
     return "";
   };
 
@@ -79,7 +118,7 @@ export function PetContextMenu(props: Props) {
             >
               <span className="dp-ctx-check">{check(it.id)}</span>
               <span className="dp-ctx-label">{it.label}</span>
-              {it.hint ? <span className="dp-ctx-hint">{it.hint}</span> : null}
+              {it.hint ? <span className="dp-ctx-hint">{it.hint}</span> : hint(it.id) ? <span className="dp-ctx-hint">{hint(it.id)}</span> : null}
             </button>
             {it.sepAfter ? <div className="dp-ctx-sep" /> : null}
           </div>

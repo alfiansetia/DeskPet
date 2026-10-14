@@ -8,7 +8,7 @@ import { useWander } from "./features/pet/useWander";
 import {
   TRANSIENT_STATES, TRANSIENT_TIMEOUT_MS, canTransitionTo, type PetState,
 } from "./features/pet/petStateMachine";
-import { loadSettings, saveSettings, store, type DeskSettings } from "./lib/store";
+import { loadSettings, saveSettings, store, type DeskSettings, type WanderPace, type WanderDirection } from "./lib/store";
 import { onToast, toast, type Toast } from "./lib/notify";
 import { speak, stopSpeech } from "./lib/tts";
 
@@ -72,16 +72,21 @@ export default function App() {
 
   // Window size: compact pet vs expanded panel vs context menu
   // (the 230px context menu cannot fit in the 220px pet window).
+  // Pet window grows with petScale so a 2x pet isn't clipped.
+  const petScale = settings.petScale ?? 1;
   useEffect(() => {
     (async () => {
       try {
         const w = getCurrentWindow();
         if (panel) await w.setSize(new LogicalSize(400, 620));
         else if (menu) await w.setSize(new LogicalSize(400, 560));
-        else await w.setSize(new LogicalSize(220, 220));
+        else {
+          const side = Math.round(220 * petScale);
+          await w.setSize(new LogicalSize(side, side));
+        }
       } catch { /* web preview uses CSS */ }
     })();
-  }, [panel, menu]);
+  }, [panel, menu, petScale]);
 
   // Scheduler tick (PRD §5.2: DB = source of truth, no duplicate, missed handling)
   useEffect(() => {
@@ -150,11 +155,19 @@ export default function App() {
     } catch { /* preview */ }
   }, []);
 
-  // Left-drag with click-vs-drag threshold (fixes accidental UI clicks)
+  // Left-drag with click-vs-drag threshold (fixes accidental UI clicks).
+  // NOTE: Tauri `startDragging()` hands the gesture to the OS, so `mouseup`
+  // on the pet element often never fires. We therefore listen on `window`
+  // and always reset `dragged -> idle` on release — no extra click needed.
+  const endDrag = useCallback((wasDragging: boolean) => {
+    if (wasDragging) void requestState("idle");
+    else void requestState("react"); // plain click = happy react
+  }, [requestState]);
   const onPetMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return; // only left click initiates dragging, right click is for menu
     dragInfo.current = { sx: e.clientX, sy: e.clientY, dragging: false };
-  }, []);
+    void requestState("dragged");
+  }, [requestState]);
   const onPetMouseMove = useCallback((e: React.MouseEvent) => {
     const d = dragInfo.current;
     if (!d || d.dragging) return;
@@ -168,9 +181,32 @@ export default function App() {
     const d = dragInfo.current;
     dragInfo.current = null;
     if (!d) return;
-    if (d.dragging) void requestState("idle");
-    else void requestState("react"); // plain click = happy react
-  }, [requestState]);
+    endDrag(d.dragging);
+  }, [endDrag]);
+
+  // Backup: OS-level drag release (covers startDragging hijack + cursor
+  // leaving the pet element mid-drag). Guarantees expression resets to idle.
+  useEffect(() => {
+    const onUp = () => {
+      const d = dragInfo.current;
+      if (!d) return;
+      dragInfo.current = null;
+      endDrag(d.dragging);
+    };
+    const onBlur = () => {
+      const d = dragInfo.current;
+      if (d?.dragging) {
+        dragInfo.current = null;
+        void requestState("idle");
+      }
+    };
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [endDrag, requestState]);
 
   const openTab = useCallback((t: PanelTab) => {
     setMenu(null);
@@ -179,6 +215,7 @@ export default function App() {
 
   const onMenuPick = useCallback(async (a: MenuAction) => {
     setMenu(null);
+    const clampScale = (v: number) => Math.min(2, Math.max(0.5, Math.round(v * 10) / 10));
     switch (a) {
       case "open-assistant": case "open-reminders": case "open-tasks": case "open-notes":
       case "open-timer": case "open-calendar": case "open-automations": case "open-settings": {
@@ -191,8 +228,38 @@ export default function App() {
         break;
       }
       case "toggle-wander": setSettings((s) => ({ ...s, wanderEnabled: !s.wanderEnabled })); break;
+      case "cycle-wander-pace": {
+        const paces: WanderPace[] = ["random", "slow", "fast", "normal"];
+        const cur = settings.wanderPace ?? "random";
+        const next = paces[(paces.indexOf(cur) + 1) % paces.length];
+        setSettings((s) => ({ ...s, wanderPace: next }));
+        const names: Record<WanderPace, string> = {
+          random: "Acak (Lari / Santai)",
+          slow: "Santai / Pelan",
+          fast: "Lari (Sprint Cepat)",
+          normal: "Normal",
+        };
+        toast("⚡ Kecepatan jalan diubah", names[next], "info");
+        break;
+      }
+      case "cycle-wander-dir": {
+        const dirs: WanderDirection[] = ["random", "horizontal", "vertical"];
+        const cur = settings.wanderDirection ?? "random";
+        const next = dirs[(dirs.indexOf(cur) + 1) % dirs.length];
+        setSettings((s) => ({ ...s, wanderDirection: next }));
+        const names: Record<WanderDirection, string> = {
+          random: "Acak (Semua Arah)",
+          horizontal: "Kiri – Kanan (Patroli)",
+          vertical: "Atas – Bawah",
+        };
+        toast("↔️ Arah jalan diubah", names[next], "info");
+        break;
+      }
       case "toggle-top": setSettings((s) => ({ ...s, alwaysOnTop: !s.alwaysOnTop })); break;
       case "toggle-motion": setSettings((s) => ({ ...s, reducedMotion: !s.reducedMotion })); break;
+      case "scale-up": setSettings((s) => ({ ...s, petScale: clampScale((s.petScale ?? 1) + 0.1) })); break;
+      case "scale-down": setSettings((s) => ({ ...s, petScale: clampScale((s.petScale ?? 1) - 0.1) })); break;
+      case "scale-reset": setSettings((s) => ({ ...s, petScale: 1 })); break;
       case "sleep": stopSpeech(); void requestState("sleep"); break;
       case "wake": void requestState("idle"); break;
       case "hide": void setVisibleBoth(false); break;
@@ -201,7 +268,7 @@ export default function App() {
         catch { window.close(); }
         break;
     }
-  }, [openTab, requestState, setVisibleBoth]);
+  }, [openTab, requestState, setVisibleBoth, settings.wanderPace, settings.wanderDirection]);
 
   // Keyboard: Ctrl/Cmd+Shift+D hide/show, Esc closes menu/panel
   useEffect(() => {
@@ -219,9 +286,14 @@ export default function App() {
   }, [visible, menu, panel, setVisibleBoth]);
 
   const wanderPaused = menu !== null || panel !== null || petState === "dragged";
-  const { offset, facing } = useWander({
-    enabled: settings.wanderEnabled, petState,
-    reducedMotion: settings.reducedMotion, paused: wanderPaused, requestState,
+  const { offset, facing, walkSpeed } = useWander({
+    enabled: settings.wanderEnabled,
+    wanderPace: settings.wanderPace ?? "random",
+    wanderDirection: settings.wanderDirection ?? "random",
+    petState,
+    reducedMotion: settings.reducedMotion,
+    paused: wanderPaused,
+    requestState,
   });
 
   // Quick NL from hidden? double-click opens assistant
@@ -263,7 +335,9 @@ export default function App() {
     <div className={`dp-root${panel ? " with-panel" : ""}`} onContextMenu={onCtxMenu}>
       <div
         className="dp-pet-wrap"
-        style={backend === "web-preview" ? { transform: `translate(${offset.x}px, ${offset.y}px) scaleX(${facing})` } : { transform: `scaleX(${facing})` }}
+        style={backend === "web-preview"
+          ? { transform: `translate(${offset.x}px, ${offset.y}px) scale(${facing * petScale}, ${petScale})` }
+          : { transform: `scale(${facing * petScale}, ${petScale})` }}
         onMouseDown={onPetMouseDown}
         onMouseMove={onPetMouseMove}
         onMouseUp={onPetMouseUp}
@@ -272,19 +346,31 @@ export default function App() {
         data-testid="drag-region"
         title="Drag kiri untuk pindah · klik = sapa · klik kanan = menu · dobel-klik = asisten"
       >
-        <PetCanvas state={petState} reducedMotion={settings.reducedMotion} characterId={settings.characterId} onTap={() => {}} />
+        <PetCanvas
+          state={petState}
+          reducedMotion={settings.reducedMotion}
+          characterId={settings.characterId}
+          speed={walkSpeed}
+          onTap={() => {}}
+        />
       </div>
 
-      {/* Status mini — bukan lagi bar opsi permanen */}
-      <div className="dp-status" data-testid="status" title="Klik kanan untuk menu">
-        {petState}{timerLeft !== null ? ` · ⏱ ${Math.floor(timerLeft / 60)}:${String(timerLeft % 60).padStart(2, "0")}` : ""} · {backend === "tauri" ? "local" : "web-preview"}
-      </div>
+      {/* Timer badge hanya jika ada timer aktif */}
+      {timerLeft !== null && (
+        <div className="dp-status" data-testid="status" title="Timer aktif">
+          ⏱ {Math.floor(timerLeft / 60)}:{String(timerLeft % 60).padStart(2, "0")}
+        </div>
+      )}
 
       {menu && (
         <PetContextMenu
           x={menu.x} y={menu.y}
-          wanderEnabled={settings.wanderEnabled} alwaysOnTop={settings.alwaysOnTop}
+          wanderEnabled={settings.wanderEnabled}
+          wanderPace={settings.wanderPace ?? "random"}
+          wanderDirection={settings.wanderDirection ?? "random"}
+          alwaysOnTop={settings.alwaysOnTop}
           reducedMotion={settings.reducedMotion} sleeping={petState === "sleep"}
+          petScale={petScale}
           onPick={(a) => void onMenuPick(a)} onClose={() => setMenu(null)}
         />
       )}

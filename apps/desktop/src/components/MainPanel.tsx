@@ -1,7 +1,7 @@
 /** MainPanel: all PRD surfaces in one expandable window (P2–P4 local-first). */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseCommand, validateAction, type ActionRequest } from "../features/assistant/parser";
-import { exportBackup, importBackup, loadSettings, saveSettings, store, uid, type Automation, type CalEvent, type DeskSettings, type Note, type Reminder, type Todo } from "../lib/store";
+import { exportBackup, importBackup, loadSettings, saveSettings, store, uid, type Automation, type CalEvent, type DeskSettings, type Note, type Reminder, type Todo, type WanderPace, type WanderDirection } from "../lib/store";
 import { formatDue, isQuietHours, nextOccurrence, parseDurationSeconds, parseNaturalDateTime, toUTCISOString } from "../lib/time";
 import { permissionState, toast } from "../lib/notify";
 import { availableVoices, speak, stopSpeech, ttsSupported } from "../lib/tts";
@@ -405,6 +405,51 @@ function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSe
   return (
     <div className="dp-settings">
       <label className="dp-check"><input type="checkbox" checked={settings.wanderEnabled} onChange={(e) => upd({ wanderEnabled: e.target.checked })} /> Jalan otomatis (walk)</label>
+      {settings.wanderEnabled && (
+        <div style={{ marginLeft: 22, marginTop: -2, marginBottom: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dp-row" style={{ alignItems: "center", margin: 0 }}>
+            <label htmlFor="dp-wander-pace" style={{ minWidth: 90, fontSize: 12 }} className="dp-muted">
+              Kecepatan:
+            </label>
+            <select
+              id="dp-wander-pace"
+              className="dp-in"
+              style={{ padding: "4px 8px", fontSize: 12 }}
+              value={settings.wanderPace ?? "random"}
+              onChange={(e) => upd({ wanderPace: e.target.value as WanderPace })}
+            >
+              <option value="random">🎲 Acak (Lari / Santai)</option>
+              <option value="slow">🐢 Santai / Pelan Saja</option>
+              <option value="fast">⚡ Lari-Lari (Sprint Cepat)</option>
+              <option value="normal">🚶 Normal</option>
+            </select>
+          </div>
+          <div className="dp-row" style={{ alignItems: "center", margin: 0 }}>
+            <label htmlFor="dp-wander-dir" style={{ minWidth: 90, fontSize: 12 }} className="dp-muted">
+              Arah jelajah:
+            </label>
+            <select
+              id="dp-wander-dir"
+              className="dp-in"
+              style={{ padding: "4px 8px", fontSize: 12 }}
+              value={settings.wanderDirection ?? "random"}
+              onChange={(e) => upd({ wanderDirection: e.target.value as WanderDirection })}
+            >
+              <option value="random">🎲 Acak (Semua Arah)</option>
+              <option value="horizontal">↔️ Kiri – Kanan (Patroli)</option>
+              <option value="vertical">↕️ Atas – Bawah</option>
+            </select>
+          </div>
+        </div>
+      )}
+      <div className="dp-row" style={{ alignItems: "center" }}>
+        <label htmlFor="dp-scale" style={{ minWidth: 110 }}>Ukuran pet {Math.round((settings.petScale ?? 1) * 100)}%</label>
+        <input id="dp-scale" type="range" min={0.5} max={2} step={0.1}
+          value={settings.petScale ?? 1}
+          onChange={(e) => upd({ petScale: Math.min(2, Math.max(0.5, Number(e.target.value))) })}
+          aria-label="Ukuran pet" style={{ flex: 1 }} />
+        <button className="dp-btn sm" onClick={() => upd({ petScale: 1 })}>Reset</button>
+      </div>
       <label className="dp-check"><input type="checkbox" checked={settings.alwaysOnTop} onChange={(e) => upd({ alwaysOnTop: e.target.checked })} /> Selalu di atas</label>
       <label className="dp-check"><input type="checkbox" checked={settings.reducedMotion} onChange={(e) => upd({ reducedMotion: e.target.checked })} /> Gerakan tenang (reduced motion)</label>
       <label className="dp-check"><input type="checkbox" checked={settings.speechMuted} onChange={(e) => { upd({ speechMuted: e.target.checked }); if (e.target.checked) stopSpeech(); }} /> Bisukan suara (TTS)</label>

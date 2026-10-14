@@ -33,7 +33,7 @@ html, body, #root {
    Never use `-webkit-app-region: drag` here: on Windows a drag region is hit-tested
    as HTCAPTION (title-bar), so right-click opens the OS system menu
    (Restore/Move/Exit) and the webview never receives the contextmenu event. */
-.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; }
+.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; }
 .dp-pet-wrap:active { cursor: grabbing; }
 
 /* Placeholder pastel cat */
@@ -91,11 +91,30 @@ html, body, #root {
 .dp-mouth { position: absolute; left: 50%; top: 40px; width: 12px; height: 8px; transform: translateX(-50%); border-bottom: 2px solid #22223a; border-radius: 0 0 12px 12px; }
 .dp-ears { position: absolute; top: -14px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 14px; }
 .dp-ear { width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent; border-bottom: 24px solid #8174e8; }
+.dp-pet--dragged .dp-face { transform: translateY(-3px); }
+.dp-pet--dragged .dp-eye { width: 22px; height: 28px; top: 6px; }
+.dp-pet--dragged .dp-mouth { width: 14px; height: 12px; top: 38px; border: 2px solid #22223a; border-radius: 50%; background: #f4a5b9; }
 
 .dp-bob { animation: dp-bob 1.6s ease-in-out infinite; }
+.dp-bob.dp-speed--fast, .dp-pet.dp-speed--fast, .dp-speed--fast .dp-bob {
+  animation: dp-bob-fast 0.36s cubic-bezier(0.25, 0.8, 0.4, 1) infinite;
+}
+.dp-bob.dp-speed--slow, .dp-pet.dp-speed--slow, .dp-speed--slow .dp-bob {
+  animation: dp-bob 2.2s ease-in-out infinite;
+}
 @keyframes dp-bob {
   0%, 100% { translate: 0 0; }
   50% { translate: 0 -6px; }
+}
+@keyframes dp-bob-fast {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -11px; }
+}
+
+/* Subtle energetic forward tilt during fast dash/sprint */
+.dp-pet.dp-speed--fast .dp-sprite-view {
+  transform: skewX(-3deg) scaleY(1.02);
+  transition: transform 140ms ease;
 }
 
 .dp-reduced, .dp-reduced * { animation: none !important; transition: none !important; }
@@ -104,9 +123,21 @@ html, body, #root {
   .dp-pet, .dp-pet * { animation: none !important; transition: none !important; }
 }
 
-.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; }
+.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; }
 .dp-pet-wrap:active { cursor: grabbing; }
 .dp-hidden { background: rgba(255,255,255,0.9); border-radius: 12px; }
+.dp-status {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dp-text);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(34, 34, 58, 0.12);
+  border-radius: 12px;
+  padding: 3px 10px;
+  box-shadow: 0 4px 12px rgba(34, 34, 58, 0.12);
+  -webkit-app-region: no-drag;
+}
 
 /* Right-click context menu */
 .dp-ctx-backdrop { position: fixed; inset: 0; z-index: 40; background: transparent; }

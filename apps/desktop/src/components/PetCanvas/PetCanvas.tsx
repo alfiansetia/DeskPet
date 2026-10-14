@@ -7,6 +7,7 @@ interface Props {
   onTap: () => void;
   characterId?: string;
   forcePlaceholder?: boolean;
+  speed?: "normal" | "fast" | "slow";
 }
 
 interface AnimationMeta {
@@ -47,6 +48,7 @@ export function PetCanvas({
   onTap,
   characterId = "deskpet.cat.lavender",
   forcePlaceholder = false,
+  speed = "normal",
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [assetFailed, setAssetFailed] = useState(false);
@@ -69,12 +71,21 @@ export function PetCanvas({
 
   const useSprites = !forcePlaceholder && !assetFailed;
 
+  const duration =
+    state === "walk"
+      ? speed === "fast"
+        ? 0.36
+        : speed === "slow"
+        ? 1.25
+        : animMeta.duration
+      : animMeta.duration;
+
   const spriteStyle: CSSProperties = {
     backgroundImage: `url(${spriteUrl})`,
     backgroundSize: `${animMeta.frames * 128}px 128px`,
     animation: reducedMotion
       ? "none"
-      : `dp-sprite-steps ${animMeta.duration}s steps(${animMeta.frames}) infinite`,
+      : `dp-sprite-steps ${duration}s steps(${animMeta.frames}) infinite`,
     backgroundPosition: "0px 0px",
     ["--sprite-end" as string]: `-${animMeta.frames * 128}px`,
   };
@@ -90,7 +101,7 @@ export function PetCanvas({
       data-character={characterId}
       data-render-mode={useSprites ? "sprite" : "placeholder"}
       onClick={onTap}
-      className={`dp-pet dp-pet--${state}${useSprites ? " dp-pet--has-sprite" : ""}${
+      className={`dp-pet dp-pet--${state} dp-speed--${speed}${useSprites ? " dp-pet--has-sprite" : ""}${
         reducedMotion ? " dp-reduced" : ""
       }`}
     >
