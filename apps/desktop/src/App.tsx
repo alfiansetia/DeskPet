@@ -113,6 +113,7 @@ export default function App() {
         <PetCanvas
           state={petState}
           reducedMotion={reducedMotion}
+          characterId="deskpet.cat.lavender"
           onTap={() => void requestState("react")}
         />
       </div>

@@ -55,6 +55,32 @@ html, body, #root {
 .dp-pet--attention, .dp-pet--reminder { outline: 3px solid #e9a23b; outline-offset: 3px; }
 .dp-pet--react { transform: scale(1.05); }
 
+/* Spritesheet character rendering (PRD §13) */
+.dp-pet--has-sprite {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.dp-sprite-view {
+  position: relative;
+  width: 128px;
+  height: 128px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 12px 24px rgba(92, 80, 184, 0.35));
+}
+
+@keyframes dp-sprite-steps {
+  from {
+    background-position: 0px 0px;
+  }
+  to {
+    background-position: var(--sprite-end, -512px) 0px;
+  }
+}
+
 .dp-face { position: relative; width: 84px; height: 64px; }
 .dp-eye { position: absolute; top: 10px; width: 18px; height: 24px; border-radius: 50%; background: #22223a; }
 .dp-eye--l { left: 12px; }
