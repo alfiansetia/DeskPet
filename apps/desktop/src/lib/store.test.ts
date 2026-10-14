@@ -42,6 +42,39 @@ describe("settings persistence", () => {
     expect(reloaded.timerBadgeEnabled).toBe(true);
     expect(reloaded.timerDoneAlertEnabled).toBe(true);
   });
+  it("migrasi paket karakter lama ke satu kucing + palette terdekat", () => {
+    localStorage.setItem("deskpet:settings", JSON.stringify({ characterId: "deskpet.cat.orange" }));
+    let r = loadSettings();
+    expect(r.characterId).toBe("deskpet.cat");
+    expect(r.petPaletteId).toBe("peach");
+
+    localStorage.setItem("deskpet:settings", JSON.stringify({ characterId: "deskpet.cat.black" }));
+    r = loadSettings();
+    expect(r.characterId).toBe("deskpet.cat");
+    expect(r.petPaletteId).toBe("midnight");
+
+    // pilihan palette sendiri tidak ditimpa migrasi
+    localStorage.setItem("deskpet:settings", JSON.stringify({ characterId: "deskpet.cat.orange", petPaletteId: "sky" }));
+    r = loadSettings();
+    expect(r.characterId).toBe("deskpet.cat");
+    expect(r.petPaletteId).toBe("sky");
+  });
+  it("spesies default kucing; nilai asing dinormalisasi", () => {
+    localStorage.setItem("deskpet:settings", JSON.stringify({}));
+    let r = loadSettings();
+    expect(r.petSpecies).toBe("cat");
+    expect(r.characterId).toBe("deskpet.cat");
+
+    localStorage.setItem("deskpet:settings", JSON.stringify({ petSpecies: "snake" }));
+    r = loadSettings();
+    expect(r.petSpecies).toBe("snake");
+    expect(r.characterId).toBe("deskpet.snake");
+
+    localStorage.setItem("deskpet:settings", JSON.stringify({ petSpecies: "naga" }));
+    r = loadSettings();
+    expect(r.petSpecies).toBe("cat");
+    expect(r.characterId).toBe("deskpet.cat");
+  });
 });
 
 describe("store backup/restore", () => {

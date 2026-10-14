@@ -681,6 +681,9 @@ export default function App() {
           state={petState}
           reducedMotion={settings.reducedMotion}
           characterId={settings.characterId}
+          species={settings.petSpecies}
+          paletteId={settings.petPaletteId}
+          customColor={settings.petCustomColor}
           speed={walkSpeed}
           onTap={() => {}}
         />

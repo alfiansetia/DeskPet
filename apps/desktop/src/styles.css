@@ -381,3 +381,16 @@ html, body, #root {
 /* Toast dengan icon depan */
 .dp-toast-main { display: flex; align-items: flex-start; gap: 8px; }
 .dp-toast-icon { flex: none; margin-top: 1px; opacity: 0.95; }
+
+/* Palette swatches (pengaturan warna kucing) */
+.dp-swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.dp-swatch { position: relative; width: 32px; height: 32px; border-radius: 50%; border: 2px solid transparent; outline: 2px solid rgba(34,34,58,0.15); outline-offset: 1px; cursor: pointer; padding: 0; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; }
+.dp-swatch.on { border-color: #fff; outline: 2px solid var(--dp-primary); }
+.dp-swatch-dot { position: absolute; right: 3px; bottom: 3px; width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.8); }
+.dp-swatch.custom { overflow: hidden; }
+
+/* Placeholder fallback per spesies (hanya saat sprite gagal dimuat) */
+.dp-pet--species-snake:not(.dp-pet--has-sprite) { filter: hue-rotate(75deg); }
+
+/* Placeholder fallback kodok: geser hue ungu -> hijau */
+.dp-pet--species-frog:not(.dp-pet--has-sprite) { filter: hue-rotate(-125deg) saturate(1.1); }

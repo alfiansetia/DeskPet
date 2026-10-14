@@ -8,7 +8,7 @@ describe("PetCanvas", () => {
     const el = screen.getByTestId("pet-canvas");
     expect(el).toHaveAttribute("data-state", "idle");
     expect(el).toHaveAttribute("aria-label", expect.stringContaining("idle"));
-    expect(el).toHaveAttribute("data-character", "deskpet.cat.lavender");
+    expect(el).toHaveAttribute("data-character", "deskpet.cat");
   });
 
   it("applies reduced-motion class", () => {
@@ -16,11 +16,11 @@ describe("PetCanvas", () => {
     expect(screen.getByTestId("pet-canvas").className).toContain("dp-reduced");
   });
 
-  it("renders sprite view with PRD §13 asset mappings", () => {
+  it("renders sprite view with PRD §13 asset mappings (single cat species)", () => {
     render(<PetCanvas state="react" reducedMotion={false} onTap={vi.fn()} />);
     const sprite = screen.getByTestId("pet-sprite");
     expect(sprite).toBeInTheDocument();
-    expect(sprite.style.backgroundImage).toContain("/assets/characters/lavender-cat/react.png");
+    expect(sprite.style.backgroundImage).toContain("/assets/characters/cat/react.png");
   });
 
   it("falls back to CSS placeholder when forcePlaceholder is requested", () => {
@@ -37,18 +37,75 @@ describe("PetCanvas", () => {
     expect(screen.queryByTestId("pet-sprite")).not.toBeInTheDocument();
   });
 
-  it("correctly resolves sprite paths for orange-cat and black-cat", () => {
+  it("legacy characterId tetap di-map ke kucing (tidak rusak)", () => {
     const { unmount } = render(
       <PetCanvas state="walk" reducedMotion={false} characterId="deskpet.cat.orange" onTap={vi.fn()} />
     );
     let sprite = screen.getByTestId("pet-sprite");
-    expect(sprite.style.backgroundImage).toContain("/assets/characters/orange-cat/walk.png");
+    expect(sprite.style.backgroundImage).toContain("/assets/characters/cat/walk.png");
+    expect(screen.getByTestId("pet-canvas")).toHaveAttribute("data-character", "deskpet.cat");
     unmount();
 
     render(
       <PetCanvas state="idle" reducedMotion={false} characterId="deskpet.cat.black" onTap={vi.fn()} />
     );
     sprite = screen.getByTestId("pet-sprite");
-    expect(sprite.style.backgroundImage).toContain("/assets/characters/black-cat/idle.png");
+    expect(sprite.style.backgroundImage).toContain("/assets/characters/cat/idle.png");
+  });
+
+  it("default palette = lavender tanpa recolor (pakai PNG asli)", () => {
+    render(<PetCanvas state="idle" reducedMotion={false} onTap={vi.fn()} />);
+    const el = screen.getByTestId("pet-canvas");
+    expect(el).toHaveAttribute("data-palette", "lavender");
+    expect(screen.getByTestId("pet-sprite").style.backgroundImage)
+      .toContain("/assets/characters/cat/idle.png");
+  });
+
+  it("preset sky menandai palette", () => {
+    render(
+      <PetCanvas state="idle" reducedMotion={false} paletteId="sky" onTap={vi.fn()} />
+    );
+    expect(screen.getByTestId("pet-canvas")).toHaveAttribute("data-palette", "sky");
+  });
+
+  it("spesies ular memakai folder snake + palette yang sama", () => {
+    const { unmount } = render(
+      <PetCanvas state="idle" reducedMotion={false} species="snake" onTap={vi.fn()} />
+    );
+    let el = screen.getByTestId("pet-canvas");
+    expect(el).toHaveAttribute("data-character", "deskpet.snake");
+    expect(screen.getByTestId("pet-sprite").style.backgroundImage)
+      .toContain("/assets/characters/snake/idle.png");
+    unmount();
+
+    render(
+      <PetCanvas state="walk" reducedMotion={false} species="snake" paletteId="matcha" onTap={vi.fn()} />
+    );
+    el = screen.getByTestId("pet-canvas");
+    expect(el).toHaveAttribute("data-palette", "matcha");
+    expect(screen.getByTestId("pet-sprite").style.backgroundImage)
+      .toContain("/assets/characters/snake/walk.png");
+  });
+
+  it("spesies tak dikenal jatuh ke kucing", () => {
+    render(
+      <PetCanvas state="idle" reducedMotion={false} species="naga" onTap={vi.fn()} />
+    );
+    const el = screen.getByTestId("pet-canvas");
+    expect(el).toHaveAttribute("data-character", "deskpet.cat");
+    expect(screen.getByTestId("pet-sprite").style.backgroundImage)
+      .toContain("/assets/characters/cat/idle.png");
+  });
+
+  it("spesies kodok memakai folder frog", () => {
+    render(
+      <PetCanvas state="jump" reducedMotion={false} species="frog" paletteId="matcha" onTap={vi.fn()} />
+    );
+    const el = screen.getByTestId("pet-canvas");
+    expect(el).toHaveAttribute("data-character", "deskpet.frog");
+    expect(el).toHaveAttribute("data-palette", "matcha");
+    expect(el.className).toContain("dp-species--frog");
+    expect(screen.getByTestId("pet-sprite").style.backgroundImage)
+      .toContain("/assets/characters/frog/jump.png");
   });
 });

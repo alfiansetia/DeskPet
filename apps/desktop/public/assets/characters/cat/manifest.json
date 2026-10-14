@@ -1,0 +1,38 @@
+{
+  "id": "deskpet.cat",
+  "name": "Cat",
+  "version": "1.1.0",
+  "format": "spritesheet-png",
+  "license": "CC0-1.0",
+  "author": "DeskPet Project",
+  "description": "Original pastel pixel-art companion cat (recolorable base). Default palette is lavender/indigo; alternate palettes are applied at runtime, adhering to PRD §13 specifications.",
+  "frameWidth": 128,
+  "frameHeight": 128,
+  "source": "cat.svg",
+  "preview": "preview.png",
+  "recolorable": true,
+  "defaultPalette": "lavender",
+  "recolorTokens": ["bodyMain", "bodyLight", "bodyShadow", "belly"],
+  "animations": {
+    "idle": "idle.png",
+    "walk": "walk.png",
+    "dragged": "dragged.png",
+    "jump": "jump.png",
+    "sleep": "sleep.png",
+    "react": "react.png",
+    "speak": "speak.png",
+    "attention": "attention.png",
+    "reminder": "reminder.png"
+  },
+  "animationDetails": {
+    "idle": { "frames": 4, "fps": 3, "file": "idle.png" },
+    "walk": { "frames": 6, "fps": 6, "file": "walk.png" },
+    "dragged": { "frames": 2, "fps": 2, "file": "dragged.png" },
+    "jump": { "frames": 4, "fps": 5, "file": "jump.png" },
+    "sleep": { "frames": 4, "fps": 2, "file": "sleep.png" },
+    "react": { "frames": 4, "fps": 4, "file": "react.png" },
+    "speak": { "frames": 4, "fps": 5, "file": "speak.png" },
+    "attention": { "frames": 4, "fps": 4, "file": "attention.png" },
+    "reminder": { "frames": 4, "fps": 4, "file": "reminder.png" }
+  }
+}

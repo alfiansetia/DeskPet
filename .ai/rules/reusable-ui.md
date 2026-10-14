@@ -19,7 +19,7 @@ Status colors: success `#3F9B78`, warning `#E9A23B`, danger `#D95C69`.
 
 ## Current reusables (P1)
 
-- `PetCanvas` (`components/PetCanvas/`) — placeholder character, props `{state, reducedMotion, onTap}`.
+- `PetCanvas` (`components/PetCanvas/`) — sprite/placeholder character, props `{state, reducedMotion, onTap, species, paletteId, customColor, speed}`.
 - Quick menu pattern in `App.tsx` (toolbar with Hide/Top/Motion/Sleep/Wake) — extract to `components/QuickMenu/` when reused in P2 panels.
 
 ## Forbidden in P1

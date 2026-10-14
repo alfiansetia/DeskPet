@@ -14,7 +14,7 @@ Windows/macOS bundle config + build docs. No AI, OAuth, email, dynamic plugins (
 
 - Rust: `apps/desktop/src-tauri/{Cargo.toml,build.rs,tauri.conf.json,capabilities/default.json,migrations/001_init.sql,icons/*,src/{main.rs,lib.rs,pet/{mod.rs,state.rs},db/mod.rs,settings/mod.rs,commands/mod.rs}}`
 - Frontend: `apps/desktop/{package.json,vite.config.ts,tsconfig.json,index.html,src/{main.tsx,App.tsx,styles.css,vite-env.d.ts,vitest.setup.ts,components/PetCanvas/{PetCanvas.tsx,PetCanvas.test.tsx},features/pet/{petStateMachine.ts,petStateMachine.test.ts},lib/{storage.ts,storage.test.ts}}}`
-- Assets: `assets/characters/lavender-cat/manifest.json`
+- Assets: `assets/characters/cat/manifest.json`
 - Docs: `README.md`, `docs/{architecture.md,build-windows-macos.md,privacy.md,testing.md}`
 - Rules: `.ai/{RULES.md,rules/reusable-ui.md,rules/reusable-functions.md}`, `.gitignore`
 

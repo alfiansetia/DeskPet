@@ -1,6 +1,7 @@
 /** Local-first persistent store (PRD §8). localStorage-backed; Rust/SQLite mirror planned. */
 import { loadJSON, saveJSON } from "./storage";
 import { nowUTC } from "./time";
+import { characterIdFor, isPetSpecies, type PetSpecies } from "../features/pet/species";
 
 export type ReminderStatus = "active" | "completed" | "dismissed" | "snoozed";
 export type RecurrenceRule = "none" | "daily" | "weekdays" | "weekly";
@@ -71,6 +72,8 @@ export interface DeskSettings {
   quietHoursEnabled: boolean;
   quietStart: number; quietEnd: number;
   characterId: string; telemetryEnabled: false;
+  petSpecies: PetSpecies;
+  petPaletteId: string; petCustomColor: string;
   petScale: number;
   prayerEnabled: boolean;
   prayerCityId: string;
@@ -91,7 +94,9 @@ export const DEFAULT_SETTINGS: DeskSettings = {
   wanderDirection: "random",
   quietHoursEnabled: true,
   quietStart: 22, quietEnd: 7,
-  characterId: "deskpet.cat.lavender", telemetryEnabled: false,
+  characterId: "deskpet.cat", telemetryEnabled: false,
+  petSpecies: "cat" as PetSpecies,
+  petPaletteId: "lavender", petCustomColor: "",
   petScale: 1,
   prayerEnabled: true,
   prayerCityId: "1301",
@@ -118,7 +123,26 @@ export function normalizeSettings(raw: Partial<DeskSettings>): DeskSettings {
   const prayerReminderMins = typeof raw.prayerReminderMins === "number"
     ? Math.min(30, Math.max(0, raw.prayerReminderMins))
     : DEFAULT_SETTINGS.prayerReminderMins;
-  return { ...DEFAULT_SETTINGS, ...raw, telemetryEnabled: false as const, petScale: scale, wanderPace, wanderDirection, prayerReminderMins };
+  const knownPalettes = ["lavender", "sky", "matcha", "peach", "rose", "midnight", "custom"];
+  let petPaletteId = typeof raw.petPaletteId === "string" && knownPalettes.includes(raw.petPaletteId)
+    ? raw.petPaletteId
+    : DEFAULT_SETTINGS.petPaletteId;
+  const petCustomColor = typeof raw.petCustomColor === "string" && /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})$/.test(raw.petCustomColor.trim())
+    ? raw.petCustomColor.trim()
+    : "";
+  // Spesies: valid atau default kucing. Simpanan lama tanpa field ini -> "cat".
+  const petSpecies: PetSpecies = isPetSpecies(raw.petSpecies) ? raw.petSpecies : "cat";
+  // Migrasi satu spesies: paket lama dihapus, petakan ke palette terdekat.
+  // Hanya bila user belum punya pilihan palette sendiri.
+  const legacyId = typeof raw.characterId === "string" ? raw.characterId : "";
+  const hasOwnPalette = typeof raw.petPaletteId === "string" && knownPalettes.includes(raw.petPaletteId);
+  if (!hasOwnPalette) {
+    if (legacyId === "deskpet.cat.orange") petPaletteId = "peach";
+    else if (legacyId === "deskpet.cat.black") petPaletteId = "midnight";
+    else petPaletteId = DEFAULT_SETTINGS.petPaletteId;
+  }
+  const characterId = characterIdFor(petSpecies);
+  return { ...DEFAULT_SETTINGS, ...raw, telemetryEnabled: false as const, petScale: scale, wanderPace, wanderDirection, prayerReminderMins, petSpecies, petPaletteId, petCustomColor, characterId };
 }
 
 export function loadSettings(): DeskSettings {

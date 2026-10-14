@@ -7,6 +7,8 @@ import { recurrenceLabel, relDue, reminderBadge, splitReminders } from "../lib/r
 import { Icon, type IconName } from "./Icon";
 import { toast } from "../lib/notify";
 import { availableVoices, speak, stopSpeech, ttsSupported } from "../lib/tts";
+import { CAT_PALETTES, CUSTOM_PALETTE_ID } from "../features/pet/palettes";
+import { PET_SPECIES, type PetSpecies } from "../features/pet/species";
 import { PrayerView } from "../features/prayer/PrayerView";
 
 export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "settings";
@@ -542,19 +544,65 @@ function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSe
         </div>
       )}
       <div className="dp-row" style={{ alignItems: "center" }}>
-        <label htmlFor="dp-character" style={{ minWidth: 110 }}>Karakter pet</label>
+        <label htmlFor="dp-species" style={{ minWidth: 110 }}>Karakter pet</label>
         <select
-          id="dp-character"
+          id="dp-species"
           className="dp-in"
           style={{ flex: 1, padding: "4px 8px" }}
-          value={settings.characterId || "deskpet.cat.lavender"}
-          onChange={(e) => upd({ characterId: e.target.value })}
+          value={settings.petSpecies || "cat"}
+          onChange={(e) => upd({ petSpecies: e.target.value as PetSpecies })}
         >
-          <option value="deskpet.cat.lavender">Lavender Cat</option>
-          <option value="deskpet.cat.orange">Orange Cat (Tabby)</option>
-          <option value="deskpet.cat.black">Black Cat (Mystic)</option>
+          {PET_SPECIES.map((s) => (
+            <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
+          ))}
         </select>
       </div>
+      <div className="dp-field" style={{ marginTop: 2 }}>
+        <span className="dp-muted">Warna karakter</span>
+          <div className="dp-swatches" role="radiogroup" aria-label="Warna karakter">
+            {CAT_PALETTES.map((pal) => {
+              const active = (settings.petPaletteId || "lavender") === pal.id;
+              return (
+                <button
+                  key={pal.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  title={pal.name}
+                  className={`dp-swatch${active ? " on" : ""}`}
+                  style={{ background: pal.bodyMain }}
+                  onClick={() => upd({ petPaletteId: pal.id })}
+                >
+                  <span className="dp-swatch-dot" style={{ background: pal.bodyLight }} />
+                </button>
+              );
+            })}
+            <label
+              className={`dp-swatch custom${settings.petPaletteId === CUSTOM_PALETTE_ID ? " on" : ""}`}
+              title="Warna custom"
+              style={{ background: settings.petCustomColor || "#8E82EB" }}
+            >
+              <input
+                type="color"
+                aria-label="Warna custom"
+                value={/^#[0-9a-fA-F]{6}$/.test(settings.petCustomColor || "") ? settings.petCustomColor : "#8E82EB"}
+                onChange={(e) => upd({ petPaletteId: CUSTOM_PALETTE_ID, petCustomColor: e.target.value })}
+                style={{ opacity: 0, width: "100%", height: "100%", cursor: "pointer", position: "absolute", inset: 0 }}
+              />
+              <span aria-hidden="true" style={{ fontSize: 12 }}>🎨</span>
+            </label>
+          </div>
+          <div className="dp-row" style={{ marginTop: 4 }}>
+            <span className="dp-muted" style={{ fontSize: 12 }}>
+              {settings.petPaletteId === CUSTOM_PALETTE_ID
+                ? `Custom ${settings.petCustomColor || "—"} · shading dibuat otomatis`
+                : `${CAT_PALETTES.find((x) => x.id === (settings.petPaletteId || "lavender"))?.name ?? "Lavender"} · mata & detail tidak berubah`}
+            </span>
+            {settings.petPaletteId !== "lavender" && (
+              <button className="dp-btn sm" onClick={() => upd({ petPaletteId: "lavender", petCustomColor: "" })}>Reset</button>
+            )}
+          </div>
+        </div>
       <div className="dp-row" style={{ alignItems: "center" }}>
         <label htmlFor="dp-scale" style={{ minWidth: 110 }}>Ukuran pet {Math.round((settings.petScale ?? 1) * 100)}%</label>
         <input id="dp-scale" type="range" min={0.5} max={2} step={0.1}

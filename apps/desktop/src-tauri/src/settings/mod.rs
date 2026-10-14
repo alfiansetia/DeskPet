@@ -35,7 +35,7 @@ impl Default for AppSettings {
             sound_muted: false,
             speech_muted: false,
             click_through_when_idle: false,
-            character_id: "deskpet.cat.lavender".to_string(),
+            character_id: "deskpet.cat".to_string(),
             wander_enabled: true,
             quiet_hours_enabled: true,
             quiet_start: 22,

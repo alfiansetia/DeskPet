@@ -746,11 +746,13 @@ This is an original design direction. Do not copy copyrighted Bonzi Buddy art or
 
 ```json
 {
-  "id": "deskpet.cat.lavender",
-  "name": "Lavender Cat",
-  "version": "1.0.0",
+  "id": "deskpet.cat",
+  "name": "Cat",
+  "version": "1.1.0",
   "format": "spritesheet-png",
   "license": "TBD",
+  "recolorable": true,
+  "defaultPalette": "lavender",
   "animations": {
     "idle": "idle.png",
     "walk": "walk.png",

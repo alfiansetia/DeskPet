@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { STATE_FRAMES, type PetState } from "../../features/pet/petStateMachine";
+import { isDefaultPalette, resolvePalette } from "../../features/pet/palettes";
+import { isPetSpecies, type PetSpecies } from "../../features/pet/species";
+import { useRecoloredSprite } from "../../features/pet/recolor";
 
 interface Props {
   state: PetState;
   reducedMotion: boolean;
   onTap: () => void;
+  /** @deprecated Spesies kini lewat `species`. Dipertahankan agar caller lama tidak rusak; diabaikan. */
   characterId?: string;
+  species?: PetSpecies | string;
+  paletteId?: string;
+  customColor?: string;
   forcePlaceholder?: boolean;
   speed?: "normal" | "fast" | "slow";
 }
@@ -17,7 +24,8 @@ interface AnimationMeta {
 }
 
 /**
- * Metadata matching PRD §13 for Lavender Cat spritesheets.
+ * Metadata animasi PRD §13. Berlaku untuk semua spesies
+ * (setiap paket wajib menyediakan 9 file ini dengan jumlah frame yang sama).
  * Frame size: 128x128 per frame.
  */
 const SPRITE_CONFIG: Record<PetState, AnimationMeta> = {
@@ -45,7 +53,9 @@ export function PetCanvas({
   state,
   reducedMotion,
   onTap,
-  characterId = "deskpet.cat.lavender",
+  species = "cat",
+  paletteId = "lavender",
+  customColor = "",
   forcePlaceholder = false,
   speed = "normal",
 }: Props) {
@@ -54,8 +64,13 @@ export function PetCanvas({
   const animMeta = SPRITE_CONFIG[state] ?? SPRITE_CONFIG.idle;
   const frames = STATE_FRAMES[state] ?? animMeta.frames;
 
-  const characterFolder = characterId.replace(/^deskpet\.cat\./, "") + "-cat";
-  const spriteUrl = `/assets/characters/${characterFolder}/${animMeta.file}`;
+  // Multi-spesies: satu folder aset per spesies (`assets/characters/<species>`).
+  // Nilai tak dikenal jatuh ke kucing agar placeholder/sprite tidak pernah broken.
+  const activeSpecies: PetSpecies = isPetSpecies(species) ? species : "cat";
+  const spriteUrl = `/assets/characters/${activeSpecies}/${animMeta.file}`;
+
+  const palette = resolvePalette(paletteId, customColor);
+  const needsRecolor = !isDefaultPalette(palette);
 
   // Gentle float bob effect for idle/walk unless reducedMotion is active
   useEffect(() => {
@@ -68,6 +83,7 @@ export function PetCanvas({
   }, [state, reducedMotion]);
 
   const useSprites = !forcePlaceholder && !assetFailed;
+  const { url: spriteSrc } = useRecoloredSprite(spriteUrl, palette, needsRecolor && useSprites);
 
   const duration =
     state === "walk"
@@ -79,7 +95,7 @@ export function PetCanvas({
       : animMeta.duration;
 
   const spriteStyle: CSSProperties = {
-    backgroundImage: `url(${spriteUrl})`,
+    backgroundImage: `url(${spriteSrc})`,
     backgroundSize: `${animMeta.frames * 128}px 128px`,
     animation: reducedMotion
       ? "none"
@@ -96,10 +112,11 @@ export function PetCanvas({
       data-testid="pet-canvas"
       data-state={state}
       data-frames={frames}
-      data-character={characterId}
+      data-character={`deskpet.${activeSpecies}`}
+      data-palette={palette.id}
       data-render-mode={useSprites ? "sprite" : "placeholder"}
       onClick={onTap}
-      className={`dp-pet dp-pet--${state} dp-speed--${speed}${useSprites ? " dp-pet--has-sprite" : ""}${
+      className={`dp-pet dp-pet--${state} dp-species--${activeSpecies} dp-speed--${speed}${useSprites ? " dp-pet--has-sprite" : ""}${
         reducedMotion ? " dp-reduced" : ""
       }`}
     >
