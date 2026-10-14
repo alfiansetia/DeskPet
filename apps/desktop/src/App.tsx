@@ -20,6 +20,7 @@ import {
   slotPeriodJitterMsFor, slotPhaseFor,
 } from "./features/pet/companions";
 import { pullBackendSettings, pushBackendSettings } from "./lib/settingsSync";
+import { TIMER_KEY, clearSharedTimer, loadSharedTimer, saveSharedTimer, sharedTimerLeft } from "./lib/timerShared";
 import { onToast, toast, type Toast } from "./lib/notify";
 import { speak, stopSpeech } from "./lib/tts";
 import {
@@ -575,43 +576,59 @@ export default function App() {
     return () => { cancelled = true; clearInterval(fast); clearInterval(slow); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.prayerEnabled, isPrimary, routeOrPresent, settings.prayerCityId, settings.prayerCityName, settings.prayerAdzanEnabled, settings.prayerBubbleEnabled, settings.prayerReminderMins, settings.quietHoursEnabled, settings.quietStart, settings.quietEnd, settings.soundMuted, settings.speechMuted]);
-  // Timer countdown
-  const timerEnd = useRef<number | null>(null);
+  // Timer terpusat multi-window (konsisten dengan scheduler §5.2): state hidup
+  // di localStorage sehingga SEMUA window menampilkan countdown yang sama;
+  // HANYA primary yang mengeksekusi selesai + merutekan alert ke presenter
+  // role "timer" (bisa window lain). Timer lama (ref per-window) membuat timer
+  // "ga work" — selesai/hilang di window yang salah.
+  const completedTimerEnd = useRef<number | null>(null);
   const timerStart = useCallback((secs: number, label = "Fokus") => {
-    timerEnd.current = Date.now() + secs * 1000;
-    setTimerLeft(secs); setTimerLabel(label);
+    const dur = Math.max(1, Math.round(secs));
+    const t = {
+      endAt: Date.now() + dur * 1000,
+      label: label.trim() ? label.trim().slice(0, 24) : "Fokus",
+      durationSecs: dur,
+      startedBy: ownIdRef.current,
+      startedAt: Date.now(),
+    };
+    completedTimerEnd.current = null;
+    saveSharedTimer(t);
+    setTimerLeft(sharedTimerLeft(t)); setTimerLabel(t.label);
     void requestState("attention");
-    toast(`${label} dimulai`, `${Math.round(secs / 60)} menit`, "info");
-  }, [requestState]);
+    toast(`${t.label} dimulai`, `${Math.round(dur / 60)} menit · countdown tampil di semua window`, "info");
+    bump();
+  }, [requestState, bump]);
   useEffect(() => {
-    if (timerLeft === null) return;
-    const id = setInterval(() => {
-      if (!timerEnd.current) return;
-      const left = Math.max(0, Math.round((timerEnd.current - Date.now()) / 1000));
+    const refresh = () => {
+      const t = loadSharedTimer();
+      const left = sharedTimerLeft(t);
       setTimerLeft(left);
-      if (left <= 0) {
-        clearInterval(id);
-        timerEnd.current = null;
+      if (t) setTimerLabel(t.label);
+      // Eksekusi selesai: primary saja (anti-duplikat antar window).
+      // Guard endAt agar timer yang sama tidak dieksekusi dua kali.
+      if (t && left === 0 && ownIdRef.current === MAIN_COMPANION_ID && completedTimerEnd.current !== t.endAt) {
+        completedTimerEnd.current = t.endAt;
+        clearSharedTimer();
         setTimerLeft(null);
         // Opsi user: selesai tanpa alert = timer diam-diam selesai (tetap refresh panel).
         if (settingsRef.current.timerDoneAlertEnabled !== false) {
-          void requestState("react");
-          setAlertEnlarged(true); // karakter membesar sampai dikonfirmasi
-          // Sama seperti sholat/pengingat: bubble besar di ATAS pet.
-          setAlertBubble({ title: `${timerLabel} selesai`, body: "Waktunya istirahat / lanjut — klik untuk konfirmasi.", icon: "timer" });
-          maybeCenterPetRef.current();
-          toast(`${timerLabel} selesai`, "Waktunya istirahat / lanjut.", "reminder");
-          if (!settings.speechMuted) speak("Timer selesai.", { muted: settings.speechMuted });
-          setTimeout(() => {
-            setAlertBubble((b) => (b?.title === `${timerLabel} selesai` ? null : b));
-            setAlertEnlarged(false);
-          }, 60_000);
+          routeOrPresent("timer", `${t.label} selesai`, "Waktunya istirahat / lanjut — klik untuk konfirmasi.", "timer");
+          if (!settingsRef.current.speechMuted) speak("Timer selesai.", { muted: settingsRef.current.speechMuted });
         }
         bump();
       }
-    }, 1000);
-    return () => clearInterval(id);
-  }, [timerLeft !== null]); // eslint-disable-line
+    };
+    refresh();
+    const id = setInterval(refresh, 1000);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === TIMER_KEY) {
+        completedTimerEnd.current = null;
+        refresh();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => { clearInterval(id); window.removeEventListener("storage", onStorage); };
+  }, [routeOrPresent, bump]);
 
   const setVisibleBoth = useCallback(async (v: boolean) => {
     setVisible(v);
