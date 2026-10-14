@@ -20,6 +20,7 @@ import {
 } from "./features/prayer/prayer";
 import { isQuietHours } from "./lib/time";
 import { petWindowLogicalSize, measurePetContentHeight } from "./lib/petWindow";
+import { keepWindowOnScreen } from "./lib/windowFit";
 
 /**
  * DeskPet shell: pet interaktif (drag kiri, klik = react, klik kanan = menu,
@@ -146,27 +147,39 @@ export default function App() {
     (async () => {
       try {
         const w = getCurrentWindow();
+        let finalW = 0;
+        let finalH = 0;
         if (panel) {
-          await w.setSize(new LogicalSize(400, 620 + (reserveAlert ? 190 : 0)));
-          return;
+          finalW = 400;
+          finalH = 620 + (reserveAlert ? 190 : 0);
+          await w.setSize(new LogicalSize(finalW, finalH));
+        } else if (menu) {
+          finalW = 400;
+          finalH = 560 + (reserveAlert ? 190 : 0);
+          await w.setSize(new LogicalSize(finalW, finalH));
+        } else {
+          const guess = petWindowLogicalSize(effectiveScale, {
+            alert: reserveAlert, mini: reserveMini, timer: reserveTimer,
+          });
+          // Lebar final langsung dari tebakan (tetap, anti-flicker teks
+          // countdown tiap detik); tinggi dikoreksi dari hasil ukur DOM agar
+          // bubble sepanjang apa pun tidak kepotong.
+          finalW = guess.width;
+          finalH = guess.height;
+          await w.setSize(new LogicalSize(finalW, finalH));
+          await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+          if (cancelled) return;
+          const height = measurePetContentHeight(effectiveScale);
+          if (Math.abs(height - guess.height) > 2) {
+            finalH = height;
+            await w.setSize(new LogicalSize(finalW, finalH));
+          }
         }
-        if (menu) {
-          await w.setSize(new LogicalSize(400, 560 + (reserveAlert ? 190 : 0)));
-          return;
-        }
-        const guess = petWindowLogicalSize(effectiveScale, {
-          alert: reserveAlert, mini: reserveMini, timer: reserveTimer,
-        });
-        // Lebar final langsung dari tebakan (tetap, anti-flicker teks
-        // countdown tiap detik); tinggi dikoreksi dari hasil ukur DOM agar
-        // bubble sepanjang apa pun tidak kepotong.
-        await w.setSize(new LogicalSize(guess.width, guess.height));
-        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-        if (cancelled) return;
-        const height = measurePetContentHeight(effectiveScale);
-        if (Math.abs(height - guess.height) > 2) {
-          await w.setSize(new LogicalSize(guess.width, height));
-        }
+        // Window membesar dengan anchor kiri-atas: kalau pet di pojok
+        // kanan/bawah, window meluber keluar layar dan menu/panel kepotong.
+        // Geser window secukupnya agar muat di work-area (kanan->kiri,
+        // bawah->atas, dan sebaliknya).
+        if (!cancelled) await keepWindowOnScreen(finalW, finalH);
       } catch { /* web preview uses CSS */ }
     })();
     return () => { cancelled = true; };
