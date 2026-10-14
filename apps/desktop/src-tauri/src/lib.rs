@@ -27,10 +27,21 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
     // Single tray icon: built here in code (NOT via tauri.conf `trayIcon`,
     // otherwise Tauri auto-creates a second, dead icon next to this one).
-    // Icon comes from bundle resources so dev and installer agree.
-    let mut tray_builder = TrayIconBuilder::new().menu(&menu);
-    if let Some(icon) = app.default_window_icon() {
-        tray_builder = tray_builder.icon(icon.clone());
+    // Monochrome template glyph so the menu bar stays black-white and
+    // macOS auto-tints it for light/dark mode (no-op on Win/Linux).
+    let mut tray_builder = TrayIconBuilder::new()
+        .menu(&menu)
+        .icon_as_template(true);
+    match tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png")) {
+        Ok(icon) => {
+            tray_builder = tray_builder.icon(icon);
+        }
+        Err(e) => {
+            eprintln!("[deskpet] tray icon load failed, using app icon: {e}");
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+        }
     }
     let _tray = tray_builder
         .tooltip("DeskPet — local-first companion")
