@@ -6,6 +6,7 @@ import { MainPanel, schedulerTick, type PanelTab } from "./components/MainPanel"
 import { Icon, type IconName } from "./components/Icon";
 import { PetContextMenu, type MenuAction } from "./features/pet/PetContextMenu";
 import { useWander } from "./features/pet/useWander";
+import { useIdleBehavior } from "./features/pet/useIdleBehavior";
 import {
   TRANSIENT_STATES, TRANSIENT_TIMEOUT_MS, canTransitionTo, type PetState,
 } from "./features/pet/petStateMachine";
@@ -47,6 +48,11 @@ export default function App() {
   const [prayerTick, setPrayerTick] = useState(0); // re-render countdown tiap detik
   const [alertEnlarged, setAlertEnlarged] = useState(false); // pesan penting -> pet 200%
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  // Micro-emote bubble (emoji kecil mengambang di atas karakter saat idle)
+  const [microEmote, setMicroEmote] = useState<string | null>(null);
+  // CSS-only idle animation class (stretch / yawn / wiggle)
+  const [idleAnimClass, setIdleAnimClass] = useState<string | null>(null);
 
   const dragInfo = useRef<{ sx: number; sy: number; dragging: boolean } | null>(null);
   const petStateRef = useRef(petState);
@@ -535,6 +541,45 @@ export default function App() {
     requestState,
   });
 
+  // Idle micro-behavior: karakter aktif melakukan aksi kecil saat idle
+  const idlePaused = wanderPaused || petState !== "idle";
+  useIdleBehavior({
+    enabled: !settings.reducedMotion,
+    petState,
+    paused: idlePaused,
+    onIdleAction: (ev) => {
+      switch (ev.kind) {
+        case "jump":
+          void requestState("jump");
+          break;
+        case "speak":
+          void requestState("speak");
+          break;
+        case "react":
+          void requestState("react");
+          break;
+        case "emote":
+          if (ev.emote) {
+            setMicroEmote(ev.emote);
+            setTimeout(() => setMicroEmote(null), 2400);
+          }
+          break;
+        case "stretch":
+        case "yawn":
+        case "wiggle": {
+          const cls = `dp-idle-${ev.kind}`;
+          setIdleAnimClass(cls);
+          // Durasi: stretch=850ms, yawn=1100ms, wiggle=700ms
+          const dur = ev.kind === "yawn" ? 1200 : ev.kind === "stretch" ? 950 : 800;
+          setTimeout(() => setIdleAnimClass(null), dur);
+          break;
+        }
+        default:
+          break;
+      }
+    },
+  });
+
   // Quick NL from hidden? double-click opens assistant
   const onDoubleClick = useCallback(() => {
     if (alertEnlarged) confirmAlert();
@@ -606,7 +651,7 @@ export default function App() {
         </button>
       )}
       <div
-        className={`dp-pet-wrap${alertEnlarged ? " dp-alert" : ""}`}
+        className={`dp-pet-wrap${alertEnlarged ? " dp-alert" : ""}${idleAnimClass ? ` ${idleAnimClass}` : ""}`}
         style={backend === "web-preview"
           ? { transform: `translate(${offset.x}px, ${offset.y}px) scale(${facing * effectiveScale}, ${effectiveScale})` }
           : { transform: `scale(${facing * effectiveScale}, ${effectiveScale})` }}
@@ -626,6 +671,12 @@ export default function App() {
           ? "Ada pesan penting! Klik pet / bubble / toast / tekan Esc untuk konfirmasi."
           : "Drag kiri untuk pindah · klik = sapa · klik kanan = menu · dobel-klik = asisten"}
       >
+        {/* Micro-emote emoji mengambang di atas kepala */}
+        {microEmote && (
+          <span key={microEmote + Date.now()} className="dp-micro-emote" aria-hidden="true">
+            {microEmote}
+          </span>
+        )}
         <PetCanvas
           state={petState}
           reducedMotion={settings.reducedMotion}

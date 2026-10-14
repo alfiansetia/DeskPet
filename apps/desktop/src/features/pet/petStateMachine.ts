@@ -11,7 +11,8 @@ export type PetState =
   | "sleep"
   | "speak"
   | "reminder"
-  | "attention";
+  | "attention"
+  | "jump";
 
 export const PET_STATES: PetState[] = [
   "idle",
@@ -22,9 +23,10 @@ export const PET_STATES: PetState[] = [
   "speak",
   "reminder",
   "attention",
+  "jump",
 ];
 
-export const TRANSIENT_STATES: PetState[] = ["react", "speak", "reminder", "attention"];
+export const TRANSIENT_STATES: PetState[] = ["react", "speak", "reminder", "attention", "jump"];
 
 /** Frames per state for the placeholder sprite (CSS steps). Missing assets fall back to idle. */
 export const STATE_FRAMES: Record<PetState, number> = {
@@ -36,6 +38,7 @@ export const STATE_FRAMES: Record<PetState, number> = {
   speak: 4,
   reminder: 4,
   attention: 4,
+  jump: 4,
 };
 
 export function isValidPetState(s: string): s is PetState {

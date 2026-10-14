@@ -33,7 +33,7 @@ html, body, #root {
    Never use `-webkit-app-region: drag` here: on Windows a drag region is hit-tested
    as HTCAPTION (title-bar), so right-click opens the OS system menu
    (Restore/Move/Exit) and the webview never receives the contextmenu event. */
-.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; }
+.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; position: relative; }
 .dp-pet-wrap:active { cursor: grabbing; }
 
 /* Placeholder pastel cat */
@@ -111,6 +111,82 @@ html, body, #root {
   50% { translate: 0 -11px; }
 }
 
+/* ── Idle micro-animations (CSS-only, tidak mengubah PetState) ─────────────── */
+
+/* stretch: meregangkan badan — sedikit memanjang ke atas lalu kembali */
+@keyframes dp-stretch-anim {
+  0%   { transform: scaleY(1)    scaleX(1); }
+  20%  { transform: scaleY(1.12) scaleX(0.9); }
+  45%  { transform: scaleY(0.92) scaleX(1.08); }
+  70%  { transform: scaleY(1.07) scaleX(0.95); }
+  100% { transform: scaleY(1)    scaleX(1); }
+}
+.dp-idle-stretch .dp-pet {
+  animation: dp-stretch-anim 0.85s cubic-bezier(0.34, 1.56, 0.64, 1) forwards !important;
+}
+
+/* yawn: sedikit membesar perlahan lalu kembali — seperti menguap dengan mulut terbuka */
+@keyframes dp-yawn-anim {
+  0%   { transform: scale(1)    rotate(0deg); filter: brightness(1); }
+  15%  { transform: scale(1.04) rotate(-1.5deg); }
+  40%  { transform: scale(1.08) rotate(-2deg);  filter: brightness(1.05); }
+  65%  { transform: scale(1.06) rotate(-1deg); }
+  85%  { transform: scale(1.02) rotate(0deg); }
+  100% { transform: scale(1)    rotate(0deg); filter: brightness(1); }
+}
+.dp-idle-yawn .dp-pet {
+  animation: dp-yawn-anim 1.1s ease-in-out forwards !important;
+}
+
+/* wiggle: goyang kecil kiri-kanan — seperti menggaruk atau gelisah */
+@keyframes dp-wiggle-anim {
+  0%   { rotate: 0deg; }
+  15%  { rotate: -5deg; }
+  30%  { rotate:  5deg; }
+  45%  { rotate: -4deg; }
+  60%  { rotate:  4deg; }
+  75%  { rotate: -2deg; }
+  90%  { rotate:  2deg; }
+  100% { rotate:  0deg; }
+}
+.dp-idle-wiggle .dp-pet {
+  animation: dp-wiggle-anim 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards !important;
+}
+
+/* jump: sedikit bounce ke atas — tambahan CSS di atas animasi sprite */
+@keyframes dp-jump-bounce {
+  0%   { translate: 0 0;     }
+  25%  { translate: 0 -18px; }
+  55%  { translate: 0 -24px; }
+  80%  { translate: 0 -8px;  }
+  100% { translate: 0 0;     }
+}
+.dp-pet--jump .dp-sprite-view {
+  animation: dp-jump-bounce 0.75s cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+             dp-sprite-steps 0.8s steps(4) infinite !important;
+}
+
+/* ── Micro-emote bubble (emoji kecil mengambang di atas kepala) ─────────────── */
+.dp-micro-emote {
+  position: absolute; /* dijangkarkan relatif terhadap .dp-pet-wrap */
+  top: -38px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 20px;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 25;
+  animation: dp-emote-float 2.2s ease-out forwards;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.18));
+}
+@keyframes dp-emote-float {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.6); }
+  15%  { opacity: 1; transform: translateX(-50%) translateY(0)   scale(1.15); }
+  35%  { opacity: 1; transform: translateX(-50%) translateY(-4px) scale(1); }
+  70%  { opacity: 1; transform: translateX(-50%) translateY(-8px) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-18px) scale(0.85); }
+}
+
 /* Subtle energetic forward tilt during fast dash/sprint */
 .dp-pet.dp-speed--fast .dp-sprite-view {
   transform: skewX(-3deg) scaleY(1.02);
@@ -123,7 +199,6 @@ html, body, #root {
   .dp-pet, .dp-pet * { animation: none !important; transition: none !important; }
 }
 
-.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; }
 /* Catatan: JANGAN tambah transition transform di sini. Skala wrap dipakai
    sebagai pengukur ukuran window (measurePetContentHeight): transisi bikin
    getBoundingClientRect terbaca di tengah animasi -> window terukur

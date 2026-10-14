@@ -21,19 +21,18 @@ interface AnimationMeta {
  * Frame size: 128x128 per frame.
  */
 const SPRITE_CONFIG: Record<PetState, AnimationMeta> = {
-  idle: { file: "idle.png", frames: 4, duration: 1.4 },
-  walk: { file: "walk.png", frames: 6, duration: 0.8 },
-  dragged: { file: "dragged.png", frames: 2, duration: 0.6 },
-  sleep: { file: "sleep.png", frames: 4, duration: 2.2 },
-  react: { file: "react.png", frames: 4, duration: 0.9 },
-  speak: { file: "speak.png", frames: 4, duration: 0.7 },
+  idle:      { file: "idle.png",      frames: 4, duration: 1.4 },
+  walk:      { file: "walk.png",      frames: 6, duration: 0.8 },
+  dragged:   { file: "dragged.png",   frames: 2, duration: 0.6 },
+  sleep:     { file: "sleep.png",     frames: 4, duration: 2.2 },
+  react:     { file: "react.png",     frames: 4, duration: 0.9 },
+  speak:     { file: "speak.png",     frames: 4, duration: 0.7 },
   attention: { file: "attention.png", frames: 4, duration: 0.8 },
-  reminder: { file: "reminder.png", frames: 4, duration: 0.8 },
+  reminder:  { file: "reminder.png",  frames: 4, duration: 0.8 },
+  jump:      { file: "jump.png",      frames: 4, duration: 0.8 }, // 4 frames @ fps 5
 };
 
-const EXTRA_SPRITE_CONFIG: Record<string, AnimationMeta> = {
-  jump: { file: "jump.png", frames: 4, duration: 0.8 },
-};
+
 
 /**
  * Character renderer supporting both PRD §13 pixel-art spritesheets
@@ -52,8 +51,7 @@ export function PetCanvas({
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [assetFailed, setAssetFailed] = useState(false);
-  const animMeta =
-    SPRITE_CONFIG[state] ?? EXTRA_SPRITE_CONFIG[state] ?? SPRITE_CONFIG.idle;
+  const animMeta = SPRITE_CONFIG[state] ?? SPRITE_CONFIG.idle;
   const frames = STATE_FRAMES[state] ?? animMeta.frames;
 
   const characterFolder = characterId.replace(/^deskpet\.cat\./, "") + "-cat";

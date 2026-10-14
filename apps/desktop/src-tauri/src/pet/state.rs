@@ -17,19 +17,21 @@ pub enum PetState {
     Speak,
     Reminder,
     Attention,
+    Jump,
 }
 
 impl PetState {
     pub fn as_str(&self) -> &'static str {
         match self {
-            PetState::Idle => "idle",
-            PetState::Walk => "walk",
-            PetState::Dragged => "dragged",
-            PetState::React => "react",
-            PetState::Sleep => "sleep",
-            PetState::Speak => "speak",
-            PetState::Reminder => "reminder",
+            PetState::Idle      => "idle",
+            PetState::Walk      => "walk",
+            PetState::Dragged   => "dragged",
+            PetState::React     => "react",
+            PetState::Sleep     => "sleep",
+            PetState::Speak     => "speak",
+            PetState::Reminder  => "reminder",
             PetState::Attention => "attention",
+            PetState::Jump      => "jump",
         }
     }
 
@@ -38,7 +40,7 @@ impl PetState {
     pub fn is_transient(&self) -> bool {
         matches!(
             self,
-            PetState::React | PetState::Speak | PetState::Reminder | PetState::Attention
+            PetState::React | PetState::Speak | PetState::Reminder | PetState::Attention | PetState::Jump
         )
     }
 
@@ -72,14 +74,15 @@ impl std::str::FromStr for PetState {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "idle" => Ok(PetState::Idle),
-            "walk" => Ok(PetState::Walk),
-            "dragged" => Ok(PetState::Dragged),
-            "react" => Ok(PetState::React),
-            "sleep" => Ok(PetState::Sleep),
-            "speak" => Ok(PetState::Speak),
-            "reminder" => Ok(PetState::Reminder),
+            "idle"      => Ok(PetState::Idle),
+            "walk"      => Ok(PetState::Walk),
+            "dragged"   => Ok(PetState::Dragged),
+            "react"     => Ok(PetState::React),
+            "sleep"     => Ok(PetState::Sleep),
+            "speak"     => Ok(PetState::Speak),
+            "reminder"  => Ok(PetState::Reminder),
             "attention" => Ok(PetState::Attention),
+            "jump"      => Ok(PetState::Jump),
             other => Err(format!("unknown pet state: {other}")),
         }
     }
@@ -92,7 +95,7 @@ mod tests {
 
     #[test]
     fn all_prd_states_parse() {
-        for s in ["idle", "walk", "dragged", "react", "sleep", "speak", "reminder", "attention"] {
+        for s in ["idle", "walk", "dragged", "react", "sleep", "speak", "reminder", "attention", "jump"] {
             assert!(PetState::from_str(s).is_ok(), "state {s} should parse");
         }
     }
@@ -121,6 +124,7 @@ mod tests {
     fn transient_states_flagged() {
         assert!(PetState::React.is_transient());
         assert!(PetState::Attention.is_transient());
+        assert!(PetState::Jump.is_transient());
         assert!(!PetState::Idle.is_transient());
         assert!(!PetState::Sleep.is_transient());
     }
