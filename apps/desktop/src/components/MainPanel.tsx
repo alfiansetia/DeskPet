@@ -1,12 +1,15 @@
 /** MainPanel: all PRD surfaces in one expandable window (P2–P4 local-first). */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { parseCommand, validateAction, type ActionRequest } from "../features/assistant/parser";
-import { exportBackup, importBackup, loadSettings, saveSettings, store, uid, type Automation, type CalEvent, type DeskSettings, type Note, type Reminder, type Todo, type WanderPace, type WanderDirection } from "../lib/store";
+import { exportBackup, importBackup, loadSettings, saveSettings, store, uid, type Automation, type CalEvent, type DeskSettings, type Note, type RecurrenceRule, type Reminder, type Todo, type WanderPace, type WanderDirection } from "../lib/store";
 import { formatDue, isQuietHours, nextOccurrence, parseDurationSeconds, parseNaturalDateTime, toUTCISOString } from "../lib/time";
-import { permissionState, toast } from "../lib/notify";
+import { recurrenceLabel, relDue, reminderBadge, splitReminders } from "../lib/reminders";
+import { Icon, type IconName } from "./Icon";
+import { toast } from "../lib/notify";
 import { availableVoices, speak, stopSpeech, ttsSupported } from "../lib/tts";
+import { PrayerView } from "../features/prayer/PrayerView";
 
-export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "auto" | "settings";
+export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "settings";
 
 interface Props {
   tab: PanelTab;
@@ -20,11 +23,12 @@ interface Props {
   timerLeft: number | null;
 }
 
-const TABS: { id: PanelTab; label: string }[] = [
-  { id: "assistant", label: "💬" }, { id: "reminders", label: "⏰" },
-  { id: "tasks", label: "✅" }, { id: "notes", label: "📝" },
-  { id: "timer", label: "⏱️" }, { id: "calendar", label: "📅" },
-  { id: "auto", label: "⚙️" }, { id: "settings", label: "🔧" },
+const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
+  { id: "assistant", icon: "chat", title: "Asisten" }, { id: "reminders", icon: "bell", title: "Pengingat" },
+  { id: "tasks", icon: "task", title: "Tugas" }, { id: "notes", icon: "note", title: "Catatan" },
+  { id: "timer", icon: "timer", title: "Timer" }, { id: "calendar", icon: "calendar", title: "Kalender" },
+  { id: "prayer", icon: "moonStar", title: "Jadwal Sholat" },
+  { id: "auto", icon: "settings", title: "Otomatisasi" }, { id: "settings", icon: "sliders", title: "Pengaturan" },
 ];
 
 export function MainPanel(p: Props) {
@@ -35,18 +39,19 @@ export function MainPanel(p: Props) {
           {TABS.map((t) => (
             <button key={t.id} role="tab" aria-selected={p.tab === t.id}
               className={`dp-tab${p.tab === t.id ? " on" : ""}`}
-              onClick={() => p.setTab(t.id)} title={t.id}>{t.label}</button>
+              onClick={() => p.setTab(t.id)} title={t.title}><Icon name={t.icon} size={16} /></button>
           ))}
         </div>
-        <button className="dp-x" onClick={p.onClose} title="Tutup (Esc)">✕</button>
+        <button className="dp-x" onClick={p.onClose} title="Tutup (Esc)"><Icon name="x" size={14} /></button>
       </div>
       <div className="dp-panel-body">
         {p.tab === "assistant" && <Assistant onAction={p.bump} timerStart={p.timerStart} />}
         {p.tab === "reminders" && <Reminders bump={p.bump} rkey={p.refreshKey} settings={p.settings} />}
         {p.tab === "tasks" && <Tasks bump={p.bump} rkey={p.refreshKey} />}
         {p.tab === "notes" && <Notes bump={p.bump} rkey={p.refreshKey} />}
-        {p.tab === "timer" && <TimerView timerStart={p.timerStart} timerLeft={p.timerLeft} />}
+        {p.tab === "timer" && <TimerView timerStart={p.timerStart} timerLeft={p.timerLeft} settings={p.settings} setSettings={p.setSettings} />}
         {p.tab === "calendar" && <Calendar bump={p.bump} rkey={p.refreshKey} />}
+        {p.tab === "prayer" && <PrayerView settings={p.settings} setSettings={p.setSettings} bump={p.bump} />}
         {p.tab === "auto" && <Automations bump={p.bump} rkey={p.refreshKey} />}
         {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} />}
       </div>
@@ -66,7 +71,7 @@ function Assistant({ onAction, timerStart }: { onAction: () => void; timerStart:
     if (!v.ok) {
       const msg = ("error" in v && v.error) ? v.error : parsed.preview;
       setLast({ preview: msg, needsConfirm: false, action: parsed.action });
-      setLog((l) => [`❓ ${msg}`, ...l].slice(0, 8));
+      setLog((l) => [`Gagal: ${msg}`, ...l].slice(0, 8));
       return;
     }
     if (parsed.needsConfirm && !confirm) {
@@ -76,7 +81,7 @@ function Assistant({ onAction, timerStart }: { onAction: () => void; timerStart:
     }
     execute(parsed.action, timerStart);
     store.audit.push({ id: uid("a"), actionId: actionId(parsed.action), source: "assistant", status: confirm ? "confirmed" : "executed", confirmationRequired: parsed.needsConfirm, createdAt: new Date().toISOString() });
-    setLog((l) => [`✅ ${parsed.preview}`, ...l].slice(0, 8));
+    setLog((l) => [`OK: ${parsed.preview}`, ...l].slice(0, 8));
     setLast(null); setQ(""); onAction();
   };
 
@@ -138,19 +143,28 @@ function Reminders({ bump, rkey, settings }: { bump: () => void; rkey: number; s
   const [items, setItems] = useState<Reminder[]>(() => store.reminders.all());
   const [title, setTitle] = useState("");
   const [when, setWhen] = useState("");
-  const [rec, setRec] = useState<"none" | "daily" | "weekdays" | "weekly">("none");
+  const [rec, setRec] = useState<RecurrenceRule>("none");
+  const [showHistory, setShowHistory] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => { setItems(store.reminders.all()); }, [rkey]);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const { upcoming, history } = splitReminders(items);
 
   const add = () => {
     const due = parseNaturalDateTime(when) ?? (when ? new Date(when) : null);
-    if (!title.trim()) { toast("Judul kosong", undefined, "error"); return; }
-    if (!due || Number.isNaN(due.getTime())) { toast("Waktu tidak dikenali. Coba 'besok jam 9 pagi'.", undefined, "error"); return; }
+    if (!title.trim()) { toast("Judul masih kosong", "Isi dulu mau diingatkan apa.", "error"); return; }
+    if (!due || Number.isNaN(due.getTime())) { toast("Waktunya belum jelas", "Contoh: besok jam 9 pagi · senin 16:30 · dalam 25 menit.", "error"); return; }
     const t = new Date().toISOString();
     const r: Reminder = { id: uid("r"), title: title.trim(), dueAt: toUTCISOString(due), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta", recurrence: rec, status: "active", createdAt: t, updatedAt: t };
     const all = [r, ...store.reminders.all()];
-    store.reminders.save(all); setItems(all); setTitle(""); setWhen(""); bump();
+    store.reminders.save(all); setItems(all); setTitle(""); setWhen(""); setRec("none"); bump();
     toast("Pengingat dibuat", `${r.title} · ${formatDue(r.dueAt)}`, "success");
   };
+  const onKeyAdd = (e: KeyboardEvent<HTMLInputElement>) => { if (e.key === "Enter") add(); };
 
   const mutate = (id: string, fn: (r: Reminder) => Reminder) => {
     const all = store.reminders.all().map((r) => (r.id === id ? fn(r) : r));
@@ -159,34 +173,100 @@ function Reminders({ bump, rkey, settings }: { bump: () => void; rkey: number; s
   const snooze = (r: Reminder, mins: number) => {
     const d = new Date(Date.now() + mins * 60000);
     mutate(r.id, (x) => ({ ...x, status: "snoozed", snoozeUntil: d.toISOString(), updatedAt: new Date().toISOString() }));
+    toast("Pengingat ditunda", `${r.title} · bunyi lagi ${relDue(d.toISOString())}.`, "info");
+  };
+  const complete = (r: Reminder) => {
+    mutate(r.id, (x) => ({ ...x, status: "completed", updatedAt: new Date().toISOString() }));
+    toast("Pengingat selesai", r.title, "success");
+  };
+  const remove = (r: Reminder) => {
+    mutate(r.id, (x) => ({ ...x, status: "dismissed", updatedAt: new Date().toISOString() }));
+  };
+  const clearHistory = () => {
+    const all = store.reminders.all().filter((r) => r.status === "active" || r.status === "snoozed");
+    store.reminders.save(all); setItems(all); bump();
+    toast("Riwayat dibersihkan", undefined, "info");
   };
 
-  const perm = permissionState();
   return (
     <div>
-      {perm === "denied" && <div className="dp-warn">⚠️ Izin notifikasi ditolak browser/OS — pengingat tetap tersimpan & muncul sebagai toast dalam app.</div>}
-      {settings.quietHoursEnabled && <div className="dp-muted">🔕 Quiet hours {settings.quietStart}:00–{settings.quietEnd}:00 — notifikasi ditahan jadi toast sunyi.</div>}
-      <div className="dp-row"><input className="dp-in" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Judul pengingat" aria-label="Judul" /></div>
+      <div className="dp-muted"><span className="dp-line"><Icon name="bell" size={12} /> Saat waktunya tiba: bubble muncul di atas pet + pet membesar. Klik pet / bubble / toast untuk konfirmasi.</span></div>
+      {settings.quietHoursEnabled && <div className="dp-muted"><span className="dp-line"><Icon name="bellOff" size={12} /> Jam sepi {settings.quietStart}:00–{settings.quietEnd}:00 — notifikasi jadi toast sunyi.</span></div>}
+
+      <div className="dp-field">
+        <span className="dp-muted">Mau diingatkan apa?</span>
+        <input className="dp-in" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={onKeyAdd}
+          placeholder="mis. minum obat, jemput adik" aria-label="Judul pengingat" />
+      </div>
+      <div className="dp-field">
+        <span className="dp-muted">Kapan?</span>
+        <input className="dp-in" value={when} onChange={(e) => setWhen(e.target.value)} onKeyDown={onKeyAdd}
+          placeholder="besok jam 9 pagi · senin 16:30 · dalam 25 menit" aria-label="Waktu pengingat" />
+      </div>
       <div className="dp-row">
-        <input className="dp-in" value={when} onChange={(e) => setWhen(e.target.value)} placeholder="besok jam 9 pagi / 16:30" aria-label="Waktu" />
-        <select className="dp-in" value={rec} onChange={(e) => setRec(e.target.value as never)} aria-label="Recurrence">
-          <option value="none">sekali</option><option value="daily">harian</option><option value="weekdays">weekday</option><option value="weekly">mingguan</option>
+        <select className="dp-in" value={rec} onChange={(e) => setRec(e.target.value as RecurrenceRule)} aria-label="Pengulangan">
+          <option value="none">Sekali saja</option>
+          <option value="daily">Setiap hari</option>
+          <option value="weekdays">Senin–Jumat</option>
+          <option value="weekly">Setiap minggu</option>
         </select>
-        <button className="dp-btn primary" onClick={add}>＋</button>
+        <button className="dp-btn primary" onClick={add} title="Buat pengingat"><Icon name="plus" size={14} /> Tambah</button>
       </div>
+
+      <div className="dp-section-title"><Icon name="bell" size={13} /> Mendatang · {upcoming.length}</div>
       <div className="dp-list">
-        {items.filter((r) => r.status !== "completed" && r.status !== "dismissed").map((r) => (
-          <div key={r.id} className="dp-item">
-            <div><b>{r.title}</b><div className="dp-muted">{formatDue(r.snoozeUntil ?? r.dueAt)} · {r.recurrence} · {r.status}</div></div>
-            <div className="dp-row">
-              <button className="dp-btn sm" onClick={() => snooze(r, 10)}>＋10m</button>
-              <button className="dp-btn sm" onClick={() => mutate(r.id, (x) => ({ ...x, status: "completed", updatedAt: new Date().toISOString() }))}>✓</button>
-              <button className="dp-btn sm" onClick={() => mutate(r.id, (x) => ({ ...x, status: "dismissed", updatedAt: new Date().toISOString() }))}>✕</button>
+        {upcoming.map((r) => {
+          const dueIso = r.snoozeUntil ?? r.dueAt;
+          const badge = reminderBadge(r, now);
+          return (
+            <div key={r.id} className="dp-item">
+              <div>
+                <b>{r.title}</b>
+                <div className="dp-muted"><span className="dp-line"><Icon name="clock" size={11} /> {formatDue(dueIso)} · {relDue(dueIso, now)}</span></div>
+                <div className="dp-badges">
+                  <span className={`dp-badge${badge.warn ? " warn" : ""}`}>{badge.warn ? <Icon name="bell" size={11} /> : <Icon name="check" size={11} />}{badge.text}</span>
+                  {r.recurrence !== "none" && <span className="dp-badge dim"><Icon name="rotate" size={11} />{recurrenceLabel(r.recurrence)}</span>}
+                </div>
+              </div>
+              <div className="dp-row">
+                <button className="dp-btn sm" onClick={() => snooze(r, 10)} title="Tunda 10 menit"><Icon name="history" size={13} /> 10 mnt</button>
+                <button className="dp-btn sm" onClick={() => complete(r)} title="Tandai selesai"><Icon name="check" size={13} /></button>
+                <button className="dp-btn sm" onClick={() => remove(r)} title="Hapus pengingat"><Icon name="trash" size={13} /></button>
+              </div>
             </div>
-          </div>
-        ))}
-        {items.length === 0 && <div className="dp-muted">Belum ada pengingat.</div>}
+          );
+        })}
+        {upcoming.length === 0 && <div className="dp-muted"><span className="dp-line"><Icon name="checkCircle" size={12} /> Semua aman — belum ada pengingat mendatang.</span></div>}
       </div>
+
+      {history.length > 0 && (
+        <>
+          <button className="dp-btn sm" onClick={() => setShowHistory((v) => !v)} title="Tampilkan riwayat"
+            aria-expanded={showHistory} style={{ marginTop: 8 }}>
+            <Icon name="history" size={13} /> Riwayat ({history.length}) <Icon name="chevronDown" size={13} />
+          </button>
+          {showHistory && (
+            <div className="dp-list" style={{ marginTop: 6 }}>
+              {history.map((r) => (
+                <div key={r.id} className="dp-item">
+                  <div>
+                    <b style={{ textDecoration: "line-through" }}>{r.title}</b>
+                    <div className="dp-muted">{r.status === "completed" ? "Selesai" : "Dihapus"} · {formatDue(r.updatedAt)}</div>
+                  </div>
+                  <div className="dp-row">
+                    <button className="dp-btn sm" onClick={() => mutate(r.id, (x) => ({ ...x, status: "active", snoozeUntil: null, updatedAt: new Date().toISOString() }))} title="Aktifkan lagi">
+                      <Icon name="rotate" size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div className="dp-row">
+                <button className="dp-btn sm" onClick={clearHistory} title="Hapus semua riwayat permanen"><Icon name="trash" size={13} /> Bersihkan riwayat</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -227,7 +307,7 @@ function Tasks({ bump, rkey }: { bump: () => void; rkey: number }) {
     <div>
       <div className="dp-row">
         <input className="dp-in" value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder="Tugas baru…" aria-label="Tugas baru" />
-        <button className="dp-btn primary" onClick={add}>＋</button>
+        <button className="dp-btn primary" onClick={add} title="Tambah tugas"><Icon name="plus" size={14} /></button>
       </div>
       <div className="dp-row">
         <input className="dp-in" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari…" aria-label="Cari tugas" />
@@ -240,8 +320,8 @@ function Tasks({ bump, rkey }: { bump: () => void; rkey: number }) {
           <div><b style={{ textDecoration: x.status === "completed" ? "line-through" : "none" }}>{x.title}</b>
             {x.dueAt && <div className="dp-muted">{formatDue(x.dueAt)}</div>}</div>
           <div className="dp-row">
-            <button className="dp-btn sm" onClick={() => mutate(x.id, (v) => ({ ...v, status: v.status === "completed" ? "open" : "completed", completedAt: v.status === "completed" ? null : new Date().toISOString(), updatedAt: new Date().toISOString() }))}>{x.status === "completed" ? "↩" : "✓"}</button>
-            <button className="dp-btn sm" onClick={() => remove(x.id)}>✕</button>
+            <button className="dp-btn sm" title={x.status === "completed" ? "Buka lagi" : "Tandai selesai"} onClick={() => mutate(x.id, (v) => ({ ...v, status: v.status === "completed" ? "open" : "completed", completedAt: v.status === "completed" ? null : new Date().toISOString(), updatedAt: new Date().toISOString() }))}>{x.status === "completed" ? <Icon name="rotate" size={13} /> : <Icon name="check" size={13} />}</button>
+            <button className="dp-btn sm" title="Hapus tugas" onClick={() => remove(x.id)}><Icon name="trash" size={13} /></button>
           </div>
         </div>
       ))}{shown.length === 0 && <div className="dp-muted">Tidak ada tugas.</div>}</div>
@@ -274,7 +354,7 @@ function Notes({ bump, rkey }: { bump: () => void; rkey: number }) {
     timer.current = setTimeout(() => {
       if (!sel) return;
       const all = store.notes.all().map((n) => (n.id === sel ? { ...n, content: v, title: v.split("\n")[0].slice(0, 60) || "Catatan", updatedAt: new Date().toISOString() } : n));
-      store.notes.save(all); setItems(all); setSaved("tersimpan ✓"); bump();
+      store.notes.save(all); setItems(all); setSaved("tersimpan"); bump();
     }, 600);
   };
   const softDelete = (id: string) => {
@@ -287,7 +367,7 @@ function Notes({ bump, rkey }: { bump: () => void; rkey: number }) {
     <div className="dp-notes">
       <div className="dp-row">
         <input className="dp-in" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari catatan…" aria-label="Cari catatan" />
-        <button className="dp-btn primary" onClick={create}>＋</button>
+        <button className="dp-btn primary" onClick={create} title="Buat catatan"><Icon name="plus" size={14} /></button>
       </div>
       <div className="dp-notes-grid">
         <div className="dp-list">{shown.map((n) => (
@@ -299,7 +379,7 @@ function Notes({ bump, rkey }: { bump: () => void; rkey: number }) {
           {active ? (<>
             <textarea className="dp-area" value={draft} onChange={(e) => onEdit(e.target.value)} placeholder="Tulis…" aria-label="Isi catatan" />
             <div className="dp-row"><span className="dp-muted">{saved}</span>
-              <button className="dp-btn sm" onClick={() => softDelete(active.id)}>Hapus</button></div>
+              <button className="dp-btn sm" onClick={() => softDelete(active.id)} title="Hapus catatan"><Icon name="trash" size={13} /> Hapus</button></div>
             <div className="dp-muted">Isi catatan tidak pernah dikirim ke AI/cloud otomatis.</div>
           </>) : <div className="dp-muted">Pilih / buat catatan.</div>}
         </div>
@@ -309,8 +389,15 @@ function Notes({ bump, rkey }: { bump: () => void; rkey: number }) {
 }
 
 /* ---------------- Timer ---------------- */
-function TimerView({ timerStart, timerLeft }: { timerStart: (s: number, l?: string) => void; timerLeft: number | null }) {
+function TimerView({ timerStart, timerLeft, settings, setSettings }: {
+  timerStart: (s: number, l?: string) => void; timerLeft: number | null;
+  settings: DeskSettings; setSettings: (s: DeskSettings) => void;
+}) {
   const [txt, setTxt] = useState("25 menit");
+  const upd = (patch: Partial<DeskSettings>) => {
+    const next = { ...settings, ...patch, telemetryEnabled: false as const };
+    saveSettings(next); setSettings(next);
+  };
   const start = () => {
     const s = parseDurationSeconds(txt);
     if (s === null) { toast("Durasi tidak valid", "Coba '25 menit' / '1 jam'.", "error"); return; }
@@ -320,13 +407,23 @@ function TimerView({ timerStart, timerLeft }: { timerStart: (s: number, l?: stri
   const ss = timerLeft !== null ? timerLeft % 60 : null;
   return (
     <div>
+      <label className="dp-check">
+        <input type="checkbox" checked={settings.timerBadgeEnabled ?? true}
+          onChange={(e) => upd({ timerBadgeEnabled: e.target.checked })} />
+        Tampilkan badge countdown di atas pet
+      </label>
+      <label className="dp-check">
+        <input type="checkbox" checked={settings.timerDoneAlertEnabled ?? true}
+          onChange={(e) => upd({ timerDoneAlertEnabled: e.target.checked })} />
+        Notifikasi saat timer selesai (toast + pet membesar + suara)
+      </label>
       <div className="dp-row"><input className="dp-in" value={txt} onChange={(e) => setTxt(e.target.value)} aria-label="Durasi" />
         <button className="dp-btn primary" onClick={start}>Mulai</button></div>
       <div className="dp-row">
         {[5, 15, 25, 50].map((m) => <button key={m} className="dp-btn sm" onClick={() => timerStart(m * 60, "Fokus")}>{m}m</button>)}
       </div>
       <div className="dp-big">{timerLeft !== null && mm !== null ? `${mm}:${String(ss).padStart(2, "0")}` : "—"}</div>
-      {timerLeft !== null && <div className="dp-muted">Timer berjalan. Selesai → notifikasi + suara.</div>}
+      {timerLeft !== null && <div className="dp-muted">Timer berjalan.{settings.timerDoneAlertEnabled !== false ? " Selesai → notifikasi + suara." : " Selesai diam-diam (notif mati)."}</div>}
     </div>
   );
 }
@@ -347,13 +444,13 @@ function Calendar({ bump, rkey }: { bump: () => void; rkey: number }) {
   };
   return (
     <div>
-      <div className="dp-warn">🔌 Google Calendar belum terhubung (opt-in). Kalender lokal di bawah ini 100% offline. Menghubungkan Google butuh OAuth + scope sempit — sengaja belum diaktifkan agar privasi terjaga.</div>
+      <div className="dp-warn"><span className="dp-line"><Icon name="info" size={12} /> Google Calendar belum terhubung (opt-in). Kalender lokal di bawah ini 100% offline. Menghubungkan Google butuh OAuth + scope sempit — sengaja belum diaktifkan agar privasi terjaga.</span></div>
       <div className="dp-row"><input className="dp-in" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Judul acara" aria-label="Judul acara" /></div>
       <div className="dp-row"><input className="dp-in" value={when} onChange={(e) => setWhen(e.target.value)} placeholder="senin jam 10" aria-label="Waktu acara" />
-        <button className="dp-btn primary" onClick={add}>＋</button></div>
+        <button className="dp-btn primary" onClick={add} title="Tambah acara"><Icon name="plus" size={14} /></button></div>
       <div className="dp-list">{items.map((e) => (
         <div key={e.id} className="dp-item"><div><b>{e.title}</b><div className="dp-muted">{formatDue(e.startAt)} · {e.source}</div></div>
-          <button className="dp-btn sm" onClick={() => { const all = store.events.all().filter((x) => x.id !== e.id); store.events.save(all); setItems(all); bump(); }}>✕</button></div>
+          <button className="dp-btn sm" title="Hapus acara" onClick={() => { const all = store.events.all().filter((x) => x.id !== e.id); store.events.save(all); setItems(all); bump(); }}><Icon name="trash" size={13} /></button></div>
       ))}{items.length === 0 && <div className="dp-muted">Belum ada acara.</div>}</div>
     </div>
   );
@@ -381,9 +478,11 @@ function Automations({ bump, rkey }: { bump: () => void; rkey: number }) {
 
 /* ---------------- Settings ---------------- */
 function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSettings: (s: DeskSettings) => void }) {
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const upd = (patch: Partial<DeskSettings>) => {
     const next = { ...settings, ...patch, telemetryEnabled: false as const };
     saveSettings(next); setSettings(next);
+    setSavedAt(new Date().toLocaleTimeString("id-ID"));
   };
   const [voices, setVoices] = useState<{ name: string; lang: string }[]>([]);
   useEffect(() => { setVoices(availableVoices()); const t = setTimeout(() => setVoices(availableVoices()), 800); return () => clearTimeout(t); }, []);
@@ -418,10 +517,10 @@ function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSe
               value={settings.wanderPace ?? "random"}
               onChange={(e) => upd({ wanderPace: e.target.value as WanderPace })}
             >
-              <option value="random">🎲 Acak (Lari / Santai)</option>
-              <option value="slow">🐢 Santai / Pelan Saja</option>
-              <option value="fast">⚡ Lari-Lari (Sprint Cepat)</option>
-              <option value="normal">🚶 Normal</option>
+              <option value="random">Acak (Lari / Santai)</option>
+              <option value="slow">Santai / Pelan Saja</option>
+              <option value="fast">Lari (Sprint Cepat)</option>
+              <option value="normal">Normal</option>
             </select>
           </div>
           <div className="dp-row" style={{ alignItems: "center", margin: 0 }}>
@@ -435,9 +534,9 @@ function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSe
               value={settings.wanderDirection ?? "random"}
               onChange={(e) => upd({ wanderDirection: e.target.value as WanderDirection })}
             >
-              <option value="random">🎲 Acak (Semua Arah)</option>
-              <option value="horizontal">↔️ Kiri – Kanan (Patroli)</option>
-              <option value="vertical">↕️ Atas – Bawah</option>
+              <option value="random">Acak (Semua Arah)</option>
+              <option value="horizontal">Kiri – Kanan (Patroli)</option>
+              <option value="vertical">Atas – Bawah</option>
             </select>
           </div>
         </div>
@@ -451,9 +550,9 @@ function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSe
           value={settings.characterId || "deskpet.cat.lavender"}
           onChange={(e) => upd({ characterId: e.target.value })}
         >
-          <option value="deskpet.cat.lavender">💜 Lavender Cat</option>
-          <option value="deskpet.cat.orange">🧡 Orange Cat (Tabby)</option>
-          <option value="deskpet.cat.black">🖤 Black Cat (Mystic)</option>
+          <option value="deskpet.cat.lavender">Lavender Cat</option>
+          <option value="deskpet.cat.orange">Orange Cat (Tabby)</option>
+          <option value="deskpet.cat.black">Black Cat (Mystic)</option>
         </select>
       </div>
       <div className="dp-row" style={{ alignItems: "center" }}>
@@ -474,10 +573,11 @@ function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSe
         <button className="dp-btn sm" onClick={() => speak("Halo, saya DeskPet.", { muted: settings.speechMuted })}>Uji suara</button>
         <button className="dp-btn sm" onClick={stopSpeech}>Stop</button>
       </div>
-      <div className="dp-row"><button className="dp-btn sm" onClick={doExport}>⬇ Backup</button>
-        <button className="dp-btn sm" onClick={() => fileRef.current?.click()}>⬆ Restore</button>
+      <div className="dp-row"><button className="dp-btn sm" onClick={doExport}><Icon name="download" size={13} /> Backup</button>
+        <button className="dp-btn sm" onClick={() => fileRef.current?.click()}><Icon name="upload" size={13} /> Restore</button>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); }} /></div>
-      <div className="dp-muted">🔒 Local-first · telemetry OFF permanen · Gmail/Google opt-in (belum terhubung) · audit tersimpan lokal ({store.audit.all().length} entri).</div>
+      {savedAt && <div className="dp-muted" data-testid="settings-saved"><span className="dp-line"><Icon name="check" size={12} /> Tersimpan {savedAt} (lokal, tanpa cloud)</span></div>}
+      <div className="dp-muted"><span className="dp-line"><Icon name="check" size={12} /> Local-first · telemetry OFF permanen · Gmail/Google opt-in (belum terhubung) · audit tersimpan lokal ({store.audit.all().length} entri).</span></div>
       <AuditView />
     </div>
   );

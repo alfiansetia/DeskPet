@@ -123,8 +123,18 @@ html, body, #root {
   .dp-pet, .dp-pet * { animation: none !important; transition: none !important; }
 }
 
-.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; }
+.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; transition: transform 220ms ease; }
 .dp-pet-wrap:active { cursor: grabbing; }
+/* Saat ada pesan penting: pet membesar 200% (via effectiveScale) + glow emas */
+.dp-pet-wrap.dp-alert { cursor: pointer; }
+.dp-pet-wrap.dp-alert .dp-pet,
+.dp-pet-wrap.dp-alert .dp-sprite-view {
+  animation: dp-alert-glow 1s ease-in-out infinite;
+}
+@keyframes dp-alert-glow {
+  0%, 100% { filter: drop-shadow(0 0 6px rgba(233, 162, 59, 0.9)); }
+  50% { filter: drop-shadow(0 0 18px rgba(233, 162, 59, 1)); }
+}
 .dp-hidden { background: rgba(255,255,255,0.9); border-radius: 12px; }
 .dp-status {
   margin-top: 6px;
@@ -161,6 +171,9 @@ html, body, #root {
 
 /* Expandable panel */
 .dp-root.with-panel { justify-content: flex-start; padding-top: 8px; }
+/* Bubble menempel tepat di atas pet: konten dijangkarkan ke bawah jendela
+   (tanpa ini bubble+pet di tengah vertikal sehingga ada space kosong di atas). */
+.dp-root.has-bubble:not(.with-panel) { justify-content: flex-end; padding-bottom: 10px; }
 .dp-panel {
   -webkit-app-region: no-drag;
   margin-top: 8px; width: 384px; max-width: calc(100vw - 16px); max-height: 400px;
@@ -189,7 +202,13 @@ html, body, #root {
 .dp-warn { background: #fff1f2; border: 1px solid #d95c69; border-radius: 10px; padding: 8px; margin: 6px 0; font-size: 12px; }
 .dp-log { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
 .dp-big { font-size: 32px; font-weight: 700; text-align: center; margin: 8px 0; }
-.dp-notes-grid { display: grid; grid-template-columns: 130px 1fr; gap: 8px; }
+.dp-notes-grid { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 8px; }
+.dp-notes-grid > * { min-width: 0; }
+/* Item daftar catatan: judul + tanggal dipotong ellipsis, tidak meluber. */
+.dp-notes-grid .dp-item { display: block; overflow: hidden; }
+.dp-notes-grid .dp-item b,
+.dp-notes-grid .dp-item .dp-muted { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-area { box-sizing: border-box; max-width: 100%; }
 .dp-check { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 13px; }
 .dp-settings { display: flex; flex-direction: column; gap: 2px; }
 
@@ -199,3 +218,82 @@ html, body, #root {
 .dp-toast.reminder { background: #5c50b8; }
 .dp-toast.error { background: #d95c69; }
 .dp-toast.success { background: #3f9b78; }
+.dp-toast.clickable { cursor: pointer; }
+.dp-toast-hint { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+.dp-speech .dp-btn { margin-top: 6px; }
+
+/* Prayer: speech bubble di atas karakter + mini countdown */
+.dp-speech {
+  position: relative;
+  z-index: 30;
+  margin-bottom: 2px;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 24px));
+  background: #ffffff;
+  color: var(--dp-text);
+  border: 2px solid var(--dp-primary);
+  border-radius: 14px;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(92, 80, 184, 0.35);
+  animation: dp-pop 220ms ease;
+  -webkit-app-region: no-drag;
+}
+.dp-speech::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 14px;
+  height: 14px;
+  transform: translateX(-50%) rotate(45deg);
+  background: #ffffff;
+  border-right: 2px solid var(--dp-primary);
+  border-bottom: 2px solid var(--dp-primary);
+}
+.dp-bubble-mini {
+  z-index: 29;
+  margin-bottom: 4px;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(34, 34, 58, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--dp-text);
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(34, 34, 58, 0.12);
+  -webkit-app-region: no-drag;
+}
+.dp-bubble-mini:hover { border-color: var(--dp-primary); }
+@keyframes dp-pop {
+  from { transform: scale(0.9) translateY(4px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+/* Inline SVG icons (pengganti emoji) */
+.dp-icon { display: inline-flex; vertical-align: -2px; flex: none; }
+.dp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.dp-tab { display: inline-flex; align-items: center; }
+.dp-ctx-label { display: inline-flex; align-items: center; gap: 8px; }
+.dp-line { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.dp-field { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 0; }
+.dp-field > .dp-muted { font-weight: 600; }
+
+/* Section title + status badges (tab Pengingat) */
+.dp-section-title { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; color: var(--dp-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 10px 0 4px; }
+.dp-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.dp-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; background: #efedff; color: var(--dp-primary-dark); border: 1px solid rgba(92, 80, 184, 0.25); }
+.dp-badge.warn { background: #fff3e2; color: #a86a12; border-color: rgba(233, 162, 59, 0.45); }
+.dp-badge.dim { background: rgba(34, 34, 58, 0.06); color: var(--dp-muted); border-color: rgba(34, 34, 58, 0.12); }
+
+/* Toast dengan icon depan */
+.dp-toast-main { display: flex; align-items: flex-start; gap: 8px; }
+.dp-toast-icon { flex: none; margin-top: 1px; opacity: 0.95; }

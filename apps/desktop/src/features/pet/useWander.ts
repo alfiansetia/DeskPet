@@ -108,23 +108,45 @@ export function useWander({
           pos = { x: p.x, y: p.y };
           scale = await w.scaleFactor().catch(() => 1);
           const mon = await currentMonitor().catch(() => null);
-          const petWindowSize = Math.round(220 * scale);
-          // Sprite kucing berukuran 128px di tengah window 220px -> ada 46px padding transparan di kiri, kanan, atas, bawah.
-          // Supaya badan kucing MENTOK ke pinggir layar, window digeser melewati tepi sejarak padding transparan tersebut.
-          const transparentPad = Math.round(46 * scale);
+          // Ukuran window AKTUAL (diukur, bukan asumsi 220px): App me-resize
+          // window sesuai konten — 330px saat pill countdown, 360px saat
+          // bubble, 2x saat alert. Asumsi 220px bikin sprite overshoot kanan
+          // + undershoot kiri selebar selisihnya.
+          let winW = Math.round(220 * scale);
+          let winH = Math.round(220 * scale);
+          try {
+            const s = await w.outerSize();
+            if (s.width > 0 && s.height > 0) { winW = s.width; winH = s.height; }
+          } catch { /* fallback 220 */ }
+          // Posisi sprite di DALAM window (CSS px, diukur live): sprite selalu
+          // di tengah horizontal; vertikal tergantung bubble/panel. Dengan
+          // begitu batas mentok cocok di semua ukuran window & skala device.
+          let padL = 46, padR = 46, padT = 46, padB = 46;
+          try {
+            const vw = window.innerWidth || 220;
+            const vh = window.innerHeight || 220;
+            const r = document.querySelector(".dp-pet-wrap")?.getBoundingClientRect();
+            if (r && r.width > 0 && r.height > 0) {
+              padL = Math.max(0, r.left);
+              padR = Math.max(0, vw - r.right);
+              padT = Math.max(0, r.top);
+              padB = Math.max(0, vh - r.bottom);
+            }
+          } catch { /* fallback 46 */ }
 
+          const taskbar = Math.round(48 * scale); // ruang taskbar bawah
           if (mon) {
-            minX = mon.position.x - transparentPad;
-            maxX = mon.position.x + mon.size.width - petWindowSize + transparentPad;
-            minY = mon.position.y - transparentPad;
-            maxY = mon.position.y + mon.size.height - petWindowSize + transparentPad - Math.round(48 * scale); // batas taskbar
+            minX = mon.position.x - Math.round(padL * scale);
+            maxX = mon.position.x + mon.size.width - winW + Math.round(padR * scale);
+            minY = mon.position.y - Math.round(padT * scale);
+            maxY = mon.position.y + mon.size.height - winH + Math.round(padB * scale) - taskbar;
           } else {
             const sw = (window.screen.availWidth || 1920) * scale;
             const sh = (window.screen.availHeight || 1080) * scale;
-            minX = -transparentPad;
-            maxX = sw - petWindowSize + transparentPad;
-            minY = -transparentPad;
-            maxY = sh - petWindowSize + transparentPad - Math.round(48 * scale);
+            minX = -Math.round(padL * scale);
+            maxX = Math.round(sw - winW + padR * scale);
+            minY = -Math.round(padT * scale);
+            maxY = Math.round(sh - winH + padB * scale - taskbar);
           }
         } catch {
           // Web preview mode (area browser)

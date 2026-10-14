@@ -72,6 +72,15 @@ export interface DeskSettings {
   quietStart: number; quietEnd: number;
   characterId: string; telemetryEnabled: false;
   petScale: number;
+  prayerEnabled: boolean;
+  prayerCityId: string;
+  prayerCityName: string;
+  prayerAdzanEnabled: boolean;
+  prayerReminderMins: number;
+  prayerMiniEnabled: boolean;
+  prayerBubbleEnabled: boolean;
+  timerBadgeEnabled: boolean;
+  timerDoneAlertEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: DeskSettings = {
@@ -84,10 +93,19 @@ export const DEFAULT_SETTINGS: DeskSettings = {
   quietStart: 22, quietEnd: 7,
   characterId: "deskpet.cat.lavender", telemetryEnabled: false,
   petScale: 1,
+  prayerEnabled: true,
+  prayerCityId: "1301",
+  prayerCityName: "KOTA JAKARTA",
+  prayerAdzanEnabled: true,
+  prayerReminderMins: 10,
+  prayerMiniEnabled: true,
+  prayerBubbleEnabled: true,
+  timerBadgeEnabled: true,
+  timerDoneAlertEnabled: true,
 };
 
-export function loadSettings(): DeskSettings {
-  const raw = loadJSON<Partial<DeskSettings>>(K.settings, {});
+/** Validate + fill defaults for a raw settings object (local cache or backend blob). */
+export function normalizeSettings(raw: Partial<DeskSettings>): DeskSettings {
   const scale = typeof raw.petScale === "number" && Number.isFinite(raw.petScale)
     ? Math.min(2, Math.max(0.5, raw.petScale))
     : 1;
@@ -97,7 +115,14 @@ export function loadSettings(): DeskSettings {
   const wanderDirection = ["random", "horizontal", "vertical"].includes(raw.wanderDirection as string)
     ? (raw.wanderDirection as WanderDirection)
     : "random";
-  return { ...DEFAULT_SETTINGS, ...raw, petScale: scale, wanderPace, wanderDirection };
+  const prayerReminderMins = typeof raw.prayerReminderMins === "number"
+    ? Math.min(30, Math.max(0, raw.prayerReminderMins))
+    : DEFAULT_SETTINGS.prayerReminderMins;
+  return { ...DEFAULT_SETTINGS, ...raw, telemetryEnabled: false as const, petScale: scale, wanderPace, wanderDirection, prayerReminderMins };
+}
+
+export function loadSettings(): DeskSettings {
+  return normalizeSettings(loadJSON<Partial<DeskSettings>>(K.settings, {}));
 }
 export function saveSettings(s: DeskSettings): void {
   saveJSON(K.settings, { ...s, telemetryEnabled: false });

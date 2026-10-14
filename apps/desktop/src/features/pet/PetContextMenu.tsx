@@ -1,9 +1,11 @@
 import type { WanderPace, WanderDirection } from "../../lib/store";
+import { Icon, type IconName } from "../../components/Icon";
 
-/** Right-click context menu (PRD §6 quick menu). Replaces the always-visible option bar. */
+/** Right-click context menu: AKSI CEPAT (langsung jalan, tanpa buka panel).
+ * Navigasi panel (asisten/pengingat/tab lain) lewat dobel-klik → asisten + tab,
+ * jadi menu ini fokus ke hal yang paling sering diklik: timer, kontrol pet. */
 export type MenuAction =
-  | "open-assistant" | "open-reminders" | "open-tasks" | "open-notes"
-  | "open-timer" | "open-calendar" | "open-automations" | "open-settings"
+  | "timer-5" | "timer-15" | "timer-25"
   | "toggle-wander" | "cycle-wander-pace" | "cycle-wander-dir" | "toggle-top" | "toggle-motion"
   | "scale-up" | "scale-down" | "scale-reset"
   | "sleep" | "wake" | "hide" | "quit";
@@ -19,27 +21,22 @@ interface Props {
   onClose: () => void;
 }
 
-const ITEMS: { id: MenuAction; label: string; hint?: string; sepAfter?: boolean }[] = [
-  { id: "open-assistant", label: "💬 Asisten", hint: "tanya / perintah" },
-  { id: "open-reminders", label: "⏰ Pengingat" },
-  { id: "open-tasks", label: "✅ Tugas" },
-  { id: "open-notes", label: "📝 Catatan", sepAfter: true },
-  { id: "open-timer", label: "⏱️ Timer" },
-  { id: "open-calendar", label: "📅 Kalender" },
-  { id: "open-automations", label: "⚙️ Otomatisasi" },
-  { id: "open-settings", label: "🔧 Pengaturan", sepAfter: true },
-  { id: "toggle-wander", label: "🚶 Jalan otomatis" },
-  { id: "cycle-wander-pace", label: "⚡ Kecepatan jalan" },
-  { id: "cycle-wander-dir", label: "↔️ Arah jalan" },
-  { id: "toggle-top", label: "📌 Selalu di atas" },
-  { id: "toggle-motion", label: "🎭 Gerakan tenang", sepAfter: true },
-  { id: "scale-up", label: "🔍＋ Perbesar" },
-  { id: "scale-down", label: "🔍－ Perkecil" },
-  { id: "scale-reset", label: "↩ Ukuran normal", sepAfter: true },
-  { id: "sleep", label: "💤 Tidur" },
-  { id: "wake", label: "☀️ Bangun" },
-  { id: "hide", label: "🙈 Sembunyikan", hint: "Ctrl+Shift+D" },
-  { id: "quit", label: "❌ Keluar" },
+const ITEMS: { id: MenuAction; icon: IconName; label: string; hint?: string; sepAfter?: boolean }[] = [
+  { id: "timer-5", icon: "timer", label: "Timer 5 mnt" },
+  { id: "timer-15", icon: "timer", label: "Timer 15 mnt" },
+  { id: "timer-25", icon: "timer", label: "Timer 25 mnt", sepAfter: true },
+  { id: "toggle-wander", icon: "move", label: "Jalan otomatis" },
+  { id: "cycle-wander-pace", icon: "zap", label: "Kecepatan jalan" },
+  { id: "cycle-wander-dir", icon: "moveX", label: "Arah jalan", sepAfter: true },
+  { id: "toggle-top", icon: "pin", label: "Selalu di atas" },
+  { id: "toggle-motion", icon: "activity", label: "Gerakan tenang", sepAfter: true },
+  { id: "scale-up", icon: "zoomIn", label: "Perbesar" },
+  { id: "scale-down", icon: "zoomOut", label: "Perkecil" },
+  { id: "scale-reset", icon: "rotate", label: "Ukuran normal", sepAfter: true },
+  { id: "sleep", icon: "moon", label: "Tidur" },
+  { id: "wake", icon: "sun", label: "Bangun" },
+  { id: "hide", icon: "eyeOff", label: "Sembunyikan", hint: "Ctrl+Shift+D" },
+  { id: "quit", icon: "power", label: "Keluar" },
 ];
 
 export function PetContextMenu(props: Props) {
@@ -51,12 +48,12 @@ export function PetContextMenu(props: Props) {
   const left = Math.max(8, Math.min(x, maxW - w - 8));
   const top = Math.max(8, Math.min(y, maxH - h - 8));
 
-  const check = (id: MenuAction): string => {
-    if (id === "toggle-wander") return props.wanderEnabled ? "✓" : "";
-    if (id === "toggle-top") return props.alwaysOnTop ? "✓" : "";
-    if (id === "toggle-motion") return props.reducedMotion ? "✓" : "";
-    if (id === "sleep") return props.sleeping ? "✓" : "";
-    return "";
+  const check = (id: MenuAction): boolean => {
+    if (id === "toggle-wander") return props.wanderEnabled;
+    if (id === "toggle-top") return props.alwaysOnTop;
+    if (id === "toggle-motion") return props.reducedMotion;
+    if (id === "sleep") return props.sleeping;
+    return false;
   };
 
   const hint = (id: MenuAction): string => {
@@ -116,8 +113,8 @@ export function PetContextMenu(props: Props) {
               className="dp-ctx-item"
               onClick={() => onPick(it.id)}
             >
-              <span className="dp-ctx-check">{check(it.id)}</span>
-              <span className="dp-ctx-label">{it.label}</span>
+              <span className="dp-ctx-check">{check(it.id) ? <Icon name="check" size={12} /> : null}</span>
+              <span className="dp-ctx-label"><Icon name={it.icon} size={14} />{it.label}</span>
               {it.hint ? <span className="dp-ctx-hint">{it.hint}</span> : hint(it.id) ? <span className="dp-ctx-hint">{hint(it.id)}</span> : null}
             </button>
             {it.sepAfter ? <div className="dp-ctx-sep" /> : null}

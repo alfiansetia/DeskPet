@@ -25,8 +25,14 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "tray-quit", "Quit DeskPet", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &hide, &toggle_top, &quit])?;
 
-    let _tray = TrayIconBuilder::new()
-        .menu(&menu)
+    // Single tray icon: built here in code (NOT via tauri.conf `trayIcon`,
+    // otherwise Tauri auto-creates a second, dead icon next to this one).
+    // Icon comes from bundle resources so dev and installer agree.
+    let mut tray_builder = TrayIconBuilder::new().menu(&menu);
+    if let Some(icon) = app.default_window_icon() {
+        tray_builder = tray_builder.icon(icon.clone());
+    }
+    let _tray = tray_builder
         .tooltip("DeskPet — local-first companion")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "tray-show" => set_pet_visible(app, true),
@@ -86,6 +92,10 @@ pub fn run() {
             commands::pet_set_visible,
             commands::settings_get,
             commands::settings_update,
+            commands::frontend_settings_get,
+            commands::frontend_settings_put,
+            commands::prayer_cache_get,
+            commands::prayer_cache_put,
             commands::app_health,
             commands::action_validate,
             commands::audit_log,
