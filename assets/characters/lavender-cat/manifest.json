@@ -1,0 +1,18 @@
+{
+  "id": "deskpet.cat.lavender",
+  "name": "Lavender Cat (P1 placeholder)",
+  "version": "1.0.0",
+  "format": "css-placeholder",
+  "license": "CC0-1.0 (original placeholder art: pure-CSS, no third-party sprites)",
+  "note": "P1 uses a code-drawn placeholder so the app runs without binary assets. Real spritesheets land in P5/hardening. Fallback rule: missing/invalid asset must render PetCanvas placeholder.",
+  "animations": {
+    "idle": "css-bob 4-frame equivalent",
+    "walk": "css-sway",
+    "dragged": "css-scale",
+    "react": "css-pop",
+    "sleep": "css-dim",
+    "speak": "css-bob-fast",
+    "reminder": "css-ring",
+    "attention": "css-ring"
+  }
+}

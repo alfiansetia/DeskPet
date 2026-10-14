@@ -1,0 +1,95 @@
+/* DeskPet P1 — pet window styles. Transparent window; all painting is local. */
+
+:root {
+  --dp-primary: #8174e8;
+  --dp-primary-dark: #5c50b8;
+  --dp-bg: #f6f5fb;
+  --dp-surface: #ffffff;
+  --dp-text: #22223a;
+  --dp-muted: #77778e;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  overflow: hidden;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dp-root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+/* Drag region covers the pet; buttons opt out with data-tauri-drag-region="false" semantics. */
+.dp-drag {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+.dp-drag:active { cursor: grabbing; }
+.dp-nodrag { -webkit-app-region: no-drag; }
+
+/* Placeholder pastel cat */
+.dp-pet {
+  position: relative;
+  width: 128px;
+  height: 128px;
+  border-radius: 32px;
+  background: linear-gradient(160deg, #cfc6ff 0%, #8174e8 60%, #5c50b8 100%);
+  box-shadow: 0 12px 32px rgba(92, 80, 184, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 160ms ease, filter 160ms ease;
+}
+.dp-pet--dragged { transform: scale(1.08) rotate(-3deg); filter: brightness(1.08); }
+.dp-pet--sleep { filter: saturate(0.6) brightness(0.85); }
+.dp-pet--attention, .dp-pet--reminder { outline: 3px solid #e9a23b; outline-offset: 3px; }
+.dp-pet--react { transform: scale(1.05); }
+
+.dp-face { position: relative; width: 84px; height: 64px; }
+.dp-eye { position: absolute; top: 10px; width: 18px; height: 24px; border-radius: 50%; background: #22223a; }
+.dp-eye--l { left: 12px; }
+.dp-eye--r { right: 12px; }
+.dp-eye::after { content: ""; position: absolute; top: 4px; left: 4px; width: 6px; height: 8px; border-radius: 50%; background: #fff; }
+.dp-blush { position: absolute; top: 38px; width: 16px; height: 8px; border-radius: 50%; background: rgba(217, 92, 105, 0.45); }
+.dp-blush--l { left: 4px; }
+.dp-blush--r { right: 4px; }
+.dp-mouth { position: absolute; left: 50%; top: 40px; width: 12px; height: 8px; transform: translateX(-50%); border-bottom: 2px solid #22223a; border-radius: 0 0 12px 12px; }
+.dp-ears { position: absolute; top: -14px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 14px; }
+.dp-ear { width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent; border-bottom: 24px solid #8174e8; }
+
+.dp-bob { animation: dp-bob 1.6s ease-in-out infinite; }
+@keyframes dp-bob {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -6px; }
+}
+
+.dp-reduced, .dp-reduced * { animation: none !important; transition: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dp-pet, .dp-pet * { animation: none !important; transition: none !important; }
+}
+
+/* Quick menu */
+.dp-menu { display: flex; gap: 6px; margin-top: 10px; }
+.dp-menu button {
+  -webkit-app-region: no-drag;
+  border: 1px solid rgba(34, 34, 58, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--dp-text);
+  border-radius: 10px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dp-menu button:focus-visible { outline: 2px solid var(--dp-primary); outline-offset: 2px; }
+.dp-status { margin-top: 6px; font-size: 11px; color: var(--dp-muted); background: rgba(255,255,255,0.8); border-radius: 8px; padding: 2px 8px; }
