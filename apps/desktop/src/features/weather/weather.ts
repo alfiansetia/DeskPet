@@ -133,3 +133,12 @@ export async function getWeather(cityId: string, cityName: string, now = Date.no
 export function getCachedWeather(cityId: string): WeatherNow | null {
   return loadJSON<WeatherNow | null>(nowKey(cityId), null);
 }
+
+/** Kelompok cuaca untuk reaksi pet: hujan / cerah / berawan. */
+export function weatherGroup(code: number | undefined): "rain" | "clear" | "cloud" {
+  if (code === undefined) return "cloud";
+  const d = describeCode(code);
+  if (d.icon === "cloudRain" || d.icon === "zap") return "rain";
+  if (d.icon === "sun") return "clear";
+  return "cloud";
+}

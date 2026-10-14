@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { clamp, previewBounds, shouldCenterPet, spritePads, tauriBounds, useWander } from "./useWander";
+import { clamp, previewBounds, shouldCenterPet, sideOf, spritePads, tauriBounds, useWander } from "./useWander";
 
 describe("wander bounds (mentok tepi)", () => {
   it("clamp membatasi nilai ke rentang", () => {
@@ -90,6 +90,14 @@ describe("shouldCenterPet (fokus alert ke tengah)", () => {
     expect(shouldCenterPet(false, false)).toBe(false);
     expect(shouldCenterPet(true, true)).toBe(false);
     expect(shouldCenterPet(false, true)).toBe(false);
+  });
+});
+
+describe("sideOf (menoleh ke kursor)", () => {
+  it("kanan -> 1 (default), kiri -> -1, tepat tengah -> 1", () => {
+    expect(sideOf(200, 100)).toBe(1);
+    expect(sideOf(50, 100)).toBe(-1);
+    expect(sideOf(100, 100)).toBe(1);
   });
 });
 

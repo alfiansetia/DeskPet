@@ -5,7 +5,7 @@ import { PetCanvas } from "./components/PetCanvas/PetCanvas";
 import { MainPanel, schedulerTick, type PanelTab } from "./components/MainPanel";
 import { Icon, type IconName } from "./components/Icon";
 import { PetContextMenu, type MenuAction } from "./features/pet/PetContextMenu";
-import { useWander, shouldCenterPet } from "./features/pet/useWander";
+import { useWander, shouldCenterPet, sideOf } from "./features/pet/useWander";
 import { useIdleBehavior } from "./features/pet/useIdleBehavior";
 import {
   TRANSIENT_STATES, TRANSIENT_TIMEOUT_MS, canTransitionTo, type PetState,
@@ -20,7 +20,11 @@ import {
   type PrayerDay,
 } from "./features/prayer/prayer";
 import { isQuietHours } from "./lib/time";
-import { getCachedWeather, getWeather, type WeatherNow } from "./features/weather/weather";
+import { getCachedWeather, getWeather, weatherGroup, type WeatherNow } from "./features/weather/weather";
+import { randomGreeting } from "./features/pet/greetings";
+import { newlyUnlocked, validActiveHat } from "./features/pet/hats";
+import { decayStats, feedStats, needsCare, playStats } from "./features/pet/care";
+import { playPetSound } from "./lib/sfx";
 import { petWindowLogicalSize, measurePetContentHeight, resolveEffectiveScale, petWrapBox } from "./lib/petWindow";
 import { keepWindowOnScreen } from "./lib/windowFit";
 
@@ -49,13 +53,25 @@ export default function App() {
   const [prayerTick, setPrayerTick] = useState(0); // re-render countdown tiap detik
   const [alertEnlarged, setAlertEnlarged] = useState(false); // pesan penting -> pet 200%
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const careTickRef = useRef(0);
   const panelRef = useRef<PanelTab | null>(null);
   panelRef.current = panel;
+  const weatherRef = useRef<WeatherNow | null>(null);
 
   // Micro-emote bubble (emoji kecil mengambang di atas karakter saat idle)
   const [microEmote, setMicroEmote] = useState<string | null>(null);
   // CSS-only idle animation class (stretch / yawn / wiggle)
   const [idleAnimClass, setIdleAnimClass] = useState<string | null>(null);
+  // Bubble sapaan teks (klik / habis dielus)
+  const [greet, setGreet] = useState<{ text: string; key: number } | null>(null);
+  const greetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Dielus: tahan klik >= 500ms
+  const [petting, setPetting] = useState(false);
+  const pettingRef = useRef(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPetAt = useRef(0); // ritme elus beruntun bukan double-click buka panel
+  // Menoleh ke kursor (override facing dari wander)
+  const [faceHold, setFaceHold] = useState<1 | -1 | null>(null);
 
   const dragInfo = useRef<{ sx: number; sy: number; dragging: boolean } | null>(null);
   const petStateRef = useRef(petState);
@@ -125,6 +141,25 @@ export default function App() {
     void requestState("idle");
   }, [requestState]);
 
+  // Sapaan teks di atas kepala (2,6 dtk, ganti bila spam).
+  const showGreet = useCallback((text: string) => {
+    if (greetTimer.current) clearTimeout(greetTimer.current);
+    setGreet({ text, key: Date.now() });
+    greetTimer.current = setTimeout(() => setGreet(null), 2600);
+  }, []);
+
+  // Emote emoji kecil (2,4 dtk).
+  const showEmote = useCallback((emote: string) => {
+    setMicroEmote(emote);
+    setTimeout(() => setMicroEmote(null), 2400);
+  }, []);
+
+  // Konteks sapaan: hujan + lapar memengaruhi frasa.
+  const greetCtx = () => ({
+    raining: weatherGroup(weatherRef.current?.code) === "rain",
+    hungry: (settingsRef.current.petStats?.hunger ?? 100) < 25,
+  });
+
   // Toasts (in-app saja, tanpa izin OS). Pesan penting -> pet membesar 200%.
   // Alert PENTING (kind reminder) TIDAK masuk daftar toast kiri: sudah diwakili
   // bubble di atas pet yang clickable untuk konfirmasi. Toast kiri hanya untuk
@@ -162,6 +197,22 @@ export default function App() {
     const id = setInterval(() => { void run(); }, 10 * 60_000);
     return () => { stop = true; clearInterval(id); };
   }, [settings.prayerCityId, settings.prayerCityName, settings.weatherEnabled]);
+  weatherRef.current = weather;
+
+  // Reaksi cuaca: transisi kelompok cuaca -> emote + info sekali (tidak spam).
+  const wxGroupRef = useRef<string | null>(null);
+  useEffect(() => {
+    const g = weatherGroup(weather?.code);
+    const prev = wxGroupRef.current;
+    wxGroupRef.current = g;
+    if (prev === null || prev === g || settings.weatherEnabled === false) return;
+    if (g === "rain") {
+      showEmote("☔");
+      toast(`Hujan di ${weather?.cityLabel ?? "kotamu"}`, "Di dalam aja ya~", "info");
+    } else if (g === "clear") {
+      showEmote("😎");
+    }
+  }, [weather, settings.weatherEnabled, showEmote]);
   const petScale = settings.petScale ?? 1;
   const effectiveScale = resolveEffectiveScale(petScale, alertEnlarged);
   const reserveAlert = alertBubble !== null;
@@ -209,11 +260,31 @@ export default function App() {
       } catch { /* web preview uses CSS */ }
     })();
     return () => { cancelled = true; };
-  }, [panel, menu, effectiveScale, reserveAlert, reserveMini, reserveTemp, reserveTimer, alertBubble]);
+  }, [panel, menu, effectiveScale, reserveAlert, reserveMini, reserveTemp, reserveTimer, alertBubble, greet !== null, petting, microEmote !== null]);
 
   // Scheduler tick (PRD §5.2: DB = source of truth, no duplicate, missed handling)
   useEffect(() => {
     const tick = () => {
+      // Tamagotchi-lite: luruhkan stat max 1x/menit; peringatkan hanya saat
+      // BARU melewati ambang (anti-spam).
+      const nowMs = Date.now();
+      if (nowMs - careTickRef.current > 60_000) {
+        careTickRef.current = nowMs;
+        const prev = settings.petStats;
+        const cur = decayStats(prev, nowMs, petStateRef.current === "sleep");
+        if (cur.hunger !== prev.hunger || cur.mood !== prev.mood || cur.energy !== prev.energy) {
+          const next = { ...settings, petStats: cur, telemetryEnabled: false as const };
+          saveSettings(next);
+          setSettings(next);
+        }
+        const prevNeeds = needsCare(prev);
+        for (const n of needsCare(cur)) {
+          if (prevNeeds.includes(n)) continue;
+          if (n === "hungry") { toast("Laper nih…", "Klik kanan → Kasih makan.", "info"); showEmote("🍗"); }
+          else if (n === "lonely") { toast("Mager nih…", "Klik kanan → Ajak main.", "info"); showEmote("🎾"); }
+          else { toast("Ngantuk…", "Pet tidur dulu ya.", "info"); void requestState("sleep"); }
+        }
+      }
       const fired = schedulerTick({ settings, onFired: () => {} });
       for (const r of fired) {
         void requestState("reminder");
@@ -419,49 +490,104 @@ export default function App() {
   // NOTE: Tauri `startDragging()` hands the gesture to the OS, so `mouseup`
   // on the pet element often never fires. We therefore listen on `window`
   // and always reset `dragged -> idle` on release — no extra click needed.
+  // Tahan 500ms untuk mulai mengelus (batal bila jadi drag / ada alert).
+  const PET_HOLD_MS = 500;
+  const cancelHold = () => {
+    if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; }
+  };
+  const stopPetting = () => {
+    cancelHold();
+    pettingRef.current = false;
+    setPetting(false);
+  };
+
   const endDrag = useCallback((wasDragging: boolean) => {
     // Klik pet = konfirmasi pesan penting (kecilkan kembali). Ini yang paling
     // intuitif: user mengklik karakter/toast/bubble/Esc, semuanya mengecilkan.
     if (alertEnlarged) { confirmAlert(); return; }
     if (wasDragging) void requestState("idle");
-    else void requestState("react"); // plain click = happy react
-  }, [requestState, alertEnlarged, confirmAlert]);
+    else {
+      void requestState("react"); // plain click = happy react
+      showGreet(randomGreeting(settingsRef.current.petSpecies ?? "cat", greetCtx()));
+    }
+  }, [requestState, alertEnlarged, confirmAlert, showGreet]);
   const onPetMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return; // only left click initiates dragging, right click is for menu
     dragInfo.current = { sx: e.clientX, sy: e.clientY, dragging: false };
     void requestState("dragged");
-  }, [requestState]);
+    // Jadwalkan elus: tahan tanpa gerak -> mode dielus (bukan drag).
+    cancelHold();
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      if (dragInfo.current?.dragging || alertEnlarged) return;
+      pettingRef.current = true;
+      setPetting(true);
+      playPetSound(settingsRef.current.soundMuted);
+      void requestState("react");
+    }, PET_HOLD_MS);
+  }, [requestState, alertEnlarged]);
   const onPetMouseMove = useCallback((e: React.MouseEvent) => {
     const d = dragInfo.current;
-    if (!d || d.dragging) return;
-    if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 5) {
+    if (d && !d.dragging && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 5) {
       d.dragging = true;
+      stopPetting(); // gerak = drag, bukan elus
+      setFaceHold(null);
       void requestState("dragged");
       try { void getCurrentWindow().startDragging(); } catch { /* preview */ }
+      return;
+    }
+    // Menoleh ke kursor saat idle + belum drag (wander sudah jeda saat hover).
+    if (!d?.dragging && petStateRef.current === "idle") {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setFaceHold(sideOf(e.clientX, r.left + r.width / 2));
     }
   }, [requestState]);
+  // Selesaikan satu sesi elus: hitung, cek topi baru, sapa bahagia.
+  const finishPetting = useCallback(() => {
+    stopPetting();
+    lastPetAt.current = Date.now();
+    const prev = settingsRef.current.pettingTotal ?? 0;
+    const next = prev + 1;
+    const updated = { ...settingsRef.current, pettingTotal: next, telemetryEnabled: false as const };
+    saveSettings(updated);
+    setSettings(updated);
+    for (const h of newlyUnlocked(prev, next)) {
+      toast(`Topi baru terbuka: ${h.emoji} ${h.name}`, "Lihat di Pengaturan → Topi.", "success");
+    }
+    showGreet(randomGreeting(settingsRef.current.petSpecies ?? "cat", { happy: true }));
+    void requestState("idle");
+  }, [requestState, showGreet]);
   const onPetMouseUp = useCallback(() => {
     const d = dragInfo.current;
     dragInfo.current = null;
+    cancelHold();
+    if (pettingRef.current) { finishPetting(); return; }
     if (!d) return;
     endDrag(d.dragging);
-  }, [endDrag]);
+  }, [endDrag, finishPetting]);
 
   // Backup: OS-level drag release (covers startDragging hijack + cursor
   // leaving the pet element mid-drag). Guarantees expression resets to idle.
   useEffect(() => {
     const onUp = () => {
       const d = dragInfo.current;
-      if (!d) return;
       dragInfo.current = null;
+      cancelHold();
+      if (pettingRef.current) { finishPetting(); return; }
+      if (!d) return;
       endDrag(d.dragging);
     };
     const onBlur = () => {
+      cancelHold();
       const d = dragInfo.current;
+      if (pettingRef.current) { stopPetting(); }
       if (d?.dragging) {
         dragInfo.current = null;
         void requestState("idle");
+      } else {
+        dragInfo.current = null;
       }
+      setFaceHold(null);
     };
     window.addEventListener("mouseup", onUp);
     window.addEventListener("blur", onBlur);
@@ -469,12 +595,37 @@ export default function App() {
       window.removeEventListener("mouseup", onUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [endDrag, requestState]);
+  }, [endDrag, finishPetting, requestState]);
+
+  // Menoleh hanya saat idle; state lain (walk/react/drag) pakai facing aslinya.
+  useEffect(() => {
+    if (petState !== "idle") setFaceHold(null);
+  }, [petState]);
 
   const openTab = useCallback((t: PanelTab) => {
     setMenu(null);
     setPanel(t);
   }, []);
+
+  // Rawat pet (menu klik kanan / panel Pengaturan): stat + emote + suara + aksi.
+  const onCare = useCallback((kind: "feed" | "play") => {
+    const cur = settingsRef.current.petStats ?? { hunger: 100, mood: 100, energy: 100, updatedAt: new Date(0).toISOString() };
+    const stats = kind === "feed" ? feedStats(cur) : playStats(cur);
+    const updated = { ...settingsRef.current, petStats: stats, telemetryEnabled: false as const };
+    saveSettings(updated);
+    setSettings(updated);
+    if (kind === "feed") {
+      showEmote("🍗");
+      playPetSound(settingsRef.current.soundMuted);
+      toast("Nyam nyam!", "Kenyang 100%.", "success");
+      void requestState("react");
+    } else {
+      showEmote("🎾");
+      playPetSound(settingsRef.current.soundMuted);
+      toast("Asik main!", "Mood 100%.", "success");
+      void requestState("jump");
+    }
+  }, [requestState, showEmote]);
 
   const onMenuPick = useCallback(async (a: MenuAction) => {
     setMenu(null);
@@ -483,6 +634,8 @@ export default function App() {
       case "timer-5": timerStart(5 * 60, "Fokus"); break;
       case "timer-15": timerStart(15 * 60, "Fokus"); break;
       case "timer-25": timerStart(25 * 60, "Fokus"); break;
+      case "feed": onCare("feed"); break;
+      case "play": onCare("play"); break;
       case "toggle-wander": setSettings((s) => ({ ...s, wanderEnabled: !s.wanderEnabled })); break;
       case "cycle-wander-pace": {
         const paces: WanderPace[] = ["random", "slow", "fast", "normal"];
@@ -524,7 +677,7 @@ export default function App() {
         catch { window.close(); }
         break;
     }
-  }, [requestState, setVisibleBoth, timerStart, settings.wanderPace, settings.wanderDirection]);
+  }, [requestState, setVisibleBoth, timerStart, settings.wanderPace, settings.wanderDirection, onCare]);
 
   // Keyboard: Ctrl/Cmd+Shift+D hide/show, Esc confirms alert, else closes menu/panel
   useEffect(() => {
@@ -562,7 +715,8 @@ export default function App() {
   }, []);
 
   const alertActive = alertBubble !== null;
-  const wanderPaused = menu !== null || panel !== null || petState === "dragged" || hovered || alertActive;
+  const moodLow = (settings.petStats?.mood ?? 100) < 25; // mager: berhenti jalan
+  const wanderPaused = menu !== null || panel !== null || petState === "dragged" || hovered || alertActive || moodLow;
   const { offset, facing, walkSpeed, centerPet } = useWander({
     enabled: settings.wanderEnabled,
     wanderPace: settings.wanderPace ?? "random",
@@ -623,9 +777,12 @@ export default function App() {
     },
   });
 
-  // Quick NL from hidden? double-click opens assistant
+  // Quick NL from hidden? double-click opens assistant.
+  // Dikecualikan: klik beruntun dalam 800ms setelah selesai dielus = ritme
+  // elus (klik-tahan-lepas), bukan niat buka panel.
   const onDoubleClick = useCallback(() => {
-    if (alertEnlarged) confirmAlert();
+    if (alertEnlarged) { confirmAlert(); return; }
+    if (isPettingRhythm(lastPetAt.current)) return;
     openTab("assistant");
   }, [openTab, alertEnlarged, confirmAlert]);
 
@@ -671,6 +828,9 @@ export default function App() {
     && settings.tempBubbleEnabled !== false && weather
     ? weather
     : null;
+  // Offset vertikal overlay mengambang (sapaan/hati/emote) agar menumpuk DI ATAS
+  // pill yang sedang tampil, bukan menabraknya. Pill diukur terpisah di bawah.
+  const aboveOffset = (tempBubble ? 26 : 0) + (miniNext ? 26 : 0);
 
   return (
     <div
@@ -705,13 +865,14 @@ export default function App() {
           <span className="dp-line"><Icon name="moonStar" size={12} /> {miniNext.name} {timeOf(prayerDay!, miniNext.name)} · {formatCountdown(miniNext.at.getTime() - Date.now())}</span>
         </button>
       )}
+      <div style={{ ...petWrapBox(effectiveScale), position: "relative", ["--above" as string]: `${aboveOffset}px` }} data-testid="pet-stack">
       <div
-        className={`dp-pet-wrap${alertEnlarged ? " dp-alert" : ""}${idleAnimClass ? ` ${idleAnimClass}` : ""}`}
+        className={`dp-pet-wrap${alertEnlarged ? " dp-alert" : ""}${idleAnimClass ? ` ${idleAnimClass}` : ""}${petting ? " dp-petting" : ""}`}
         style={backend === "web-preview"
-          ? { ...petWrapBox(effectiveScale), transform: `translate(${offset.x}px, ${offset.y}px) scale(${facing * effectiveScale}, ${effectiveScale})` }
-          : { ...petWrapBox(effectiveScale), transform: `scale(${facing * effectiveScale}, ${effectiveScale})` }}
+          ? { ...petWrapBox(effectiveScale), transform: `translate(${offset.x}px, ${offset.y}px) scale(${(faceHold ?? facing) * effectiveScale}, ${effectiveScale})` }
+          : { ...petWrapBox(effectiveScale), transform: `scale(${(faceHold ?? facing) * effectiveScale}, ${effectiveScale})` }}
         onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseLeave={() => { setHovered(false); setFaceHold(null); }}
         onMouseDown={onPetMouseDown}
         onMouseMove={(e) => {
           if (!hovered) setHovered(true);
@@ -726,12 +887,6 @@ export default function App() {
           ? "Ada pesan penting! Klik pet / bubble / toast / tekan Esc untuk konfirmasi."
           : "Drag kiri untuk pindah · klik = sapa · klik kanan = menu · dobel-klik = asisten"}
       >
-        {/* Micro-emote emoji mengambang di atas kepala */}
-        {microEmote && (
-          <span key={microEmote + Date.now()} className="dp-micro-emote" aria-hidden="true">
-            {microEmote}
-          </span>
-        )}
         <PetCanvas
           state={petState}
           reducedMotion={settings.reducedMotion}
@@ -739,9 +894,28 @@ export default function App() {
           species={settings.petSpecies}
           paletteId={settings.petPaletteId}
           customColor={settings.petCustomColor}
+          hat={validActiveHat(settings.activeHat, settings.pettingTotal ?? 0)}
           speed={walkSpeed}
           onTap={() => {}}
         />
+      </div>
+      {/* Overlay teks: hanya saat tidak ada alert (alert punya bubble sendiri).
+          Di layer stack TANPA flip agar tidak ikut kecermin (scaleX -1 di wrap). */}
+      {!alertBubble && microEmote && (
+        <span key={microEmote + Date.now()} className="dp-micro-emote" aria-hidden="true">
+          {microEmote}
+        </span>
+      )}
+      {!alertBubble && petting && (
+        <span className="dp-hearts" data-testid="pet-hearts" aria-hidden="true">
+          <span>💕</span><span>💗</span><span>💖</span>
+        </span>
+      )}
+      {!alertBubble && greet && (
+        <span key={greet.key} className="dp-greet" data-testid="pet-greet" aria-hidden="true">
+          {greet.text}
+        </span>
+      )}
       </div>
 
       {/* Timer badge hanya jika ada timer aktif + user mengizinkan */}
@@ -767,7 +941,7 @@ export default function App() {
       {panel && (
         <MainPanel tab={panel} setTab={setPanel} onClose={() => setPanel(null)}
           settings={settings} setSettings={setSettings}
-          refreshKey={refreshKey} bump={bump} timerStart={timerStart} timerLeft={timerLeft} />
+          refreshKey={refreshKey} bump={bump} timerStart={timerStart} timerLeft={timerLeft} onCare={onCare} />
       )}
 
       <div className="dp-toasts" aria-live="polite">
@@ -789,3 +963,8 @@ export default function App() {
 
 // Re-export for assistant execute path typing
 export type { PanelTab };
+
+/** Ritme elus (klik-tahan-lepas beruntun) bukan double-click buka panel. */
+export function isPettingRhythm(lastPetAtMs: number, nowMs = Date.now(), windowMs = 800): boolean {
+  return nowMs - lastPetAtMs < windowMs;
+}

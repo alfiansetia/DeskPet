@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { STATE_FRAMES, type PetState } from "../../features/pet/petStateMachine";
 import { isDefaultPalette, resolvePalette } from "../../features/pet/palettes";
+import { HAT_ANCHORS, hatById } from "../../features/pet/hats";
 import { isPetSpecies, type PetSpecies } from "../../features/pet/species";
 import { useRecoloredSprite } from "../../features/pet/recolor";
 
@@ -13,6 +14,8 @@ interface Props {
   species?: PetSpecies | string;
   paletteId?: string;
   customColor?: string;
+  /** Id topi aktif ("none"/null = tanpa topi). Dirender di koordinat 128px. */
+  hat?: string | null;
   forcePlaceholder?: boolean;
   speed?: "normal" | "fast" | "slow";
 }
@@ -56,6 +59,7 @@ export function PetCanvas({
   species = "cat",
   paletteId = "lavender",
   customColor = "",
+  hat = null,
   forcePlaceholder = false,
   speed = "normal",
 }: Props) {
@@ -71,6 +75,11 @@ export function PetCanvas({
 
   const palette = resolvePalette(paletteId, customColor);
   const needsRecolor = !isDefaultPalette(palette);
+
+  // Topi overlay (emoji, pointer-events none agar drag/klik tetap ke pet).
+  const hatDef = hatById(hat ?? "none");
+  const hatAnchor = HAT_ANCHORS[activeSpecies];
+  const showHat = hatDef.id !== "none";
 
   // Gentle float bob effect for idle/walk unless reducedMotion is active
   useEffect(() => {
@@ -120,6 +129,21 @@ export function PetCanvas({
         reducedMotion ? " dp-reduced" : ""
       }`}
     >
+      {showHat && (
+        <span
+          className="dp-hat"
+          data-testid="pet-hat"
+          data-hat={hatDef.id}
+          aria-hidden="true"
+          style={{
+            left: `calc(50% + ${hatAnchor.dx}px)`,
+            top: `${hatAnchor.top}px`,
+            fontSize: `${hatAnchor.size}px`,
+          }}
+        >
+          {hatDef.emoji}
+        </span>
+      )}
       {useSprites ? (
         <div
           className="dp-sprite-view"

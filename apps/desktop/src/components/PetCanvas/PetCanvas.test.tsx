@@ -108,4 +108,17 @@ describe("PetCanvas", () => {
     expect(screen.getByTestId("pet-sprite").style.backgroundImage)
       .toContain("/assets/characters/frog/jump.png");
   });
+
+  it("topi overlay dirender bila diminta", () => {
+    const { unmount } = render(
+      <PetCanvas state="idle" reducedMotion={false} hat="cap" onTap={vi.fn()} />
+    );
+    const hat = screen.getByTestId("pet-hat");
+    expect(hat).toHaveAttribute("data-hat", "cap");
+    expect(hat.textContent).toBe("🧢");
+    unmount();
+
+    render(<PetCanvas state="idle" reducedMotion={false} onTap={vi.fn()} />);
+    expect(screen.queryByTestId("pet-hat")).toBeNull();
+  });
 });

@@ -81,7 +81,7 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
   afterEach(() => vi.restoreAllMocks());
 
   function mockDom(o: {
-    petH?: number; speechH?: number; miniH?: number; tempH?: number; statusH?: number; hasBubble?: boolean; hasStatus?: boolean;
+    petH?: number; speechH?: number; miniH?: number; tempH?: number; greetH?: number; statusH?: number; hasBubble?: boolean; hasStatus?: boolean;
   }) {
     vi.spyOn(document, "querySelector").mockImplementation((sel: string) => {
       if (sel === ".dp-pet-wrap") {
@@ -93,6 +93,7 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
         ".dp-root > .dp-speech": o.speechH,
         ".dp-root > .dp-bubble-mini": o.miniH,
         ".dp-root > .dp-bubble-temp": o.tempH,
+        ".dp-pet-stack > .dp-greet": o.greetH,
         ".dp-root > .dp-status": o.statusH,
       };
       const h = map[sel];
@@ -129,6 +130,12 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
   it("bubble suhu menumpuk di atas pill (ikut dihitung + margin)", () => {
     mockDom({ petH: 64, tempH: 20, miniH: 23, hasBubble: true });
     expect(measurePetContentHeight(0.5)).toBe(6 + 20 + 2 + 23 + 2 + 64 + 10 + 8);
+  });
+
+  it("sapaan di atas tumpukan ikut dihitung (tidak kepotong window)", () => {
+    mockDom({ petH: 64, tempH: 20, miniH: 23, greetH: 22, hasBubble: true });
+    // napas + temp + mini + sapaan(22+6) + pet + padding + pengaman
+    expect(measurePetContentHeight(0.5)).toBe(6 + 20 + 2 + 23 + 2 + 22 + 6 + 64 + 10 + 8);
   });
 
   it("badge timer saja: konten dijangkar bawah (padding 10)", () => {

@@ -52,4 +52,21 @@ describe("App temp bubble stacking", () => {
     await screen.findByTestId("prayer-mini", undefined, { timeout: 3000 });
     expect(document.querySelector("[data-testid='temp-bubble']")).toBeNull();
   });
+
+  it("offset sapaan mengikuti tumpukan pill (--above 52px bila suhu+sholat)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    seedPrayerAndWeather();
+    render(<App />);
+    await screen.findByTestId("prayer-mini", undefined, { timeout: 3000 });
+    const stack = screen.getByTestId("pet-stack");
+    expect(stack.style.getPropertyValue("--above")).toBe("52px");
+  });
+
+  it("tanpa pill, offset sapaan nol", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    render(<App />);
+    await screen.findByTestId("drag-region");
+    const stack = screen.getByTestId("pet-stack");
+    expect(stack.style.getPropertyValue("--above")).toBe("0px");
+  });
 });

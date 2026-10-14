@@ -6,6 +6,7 @@ import { Icon, type IconName } from "../../components/Icon";
  * jadi menu ini fokus ke hal yang paling sering diklik: timer, kontrol pet. */
 export type MenuAction =
   | "timer-5" | "timer-15" | "timer-25"
+  | "feed" | "play"
   | "toggle-wander" | "cycle-wander-pace" | "cycle-wander-dir" | "toggle-top" | "toggle-motion"
   | "scale-up" | "scale-down" | "scale-reset"
   | "sleep" | "wake" | "hide" | "quit";
@@ -25,6 +26,8 @@ const ITEMS: { id: MenuAction; icon: IconName; label: string; hint?: string; sep
   { id: "timer-5", icon: "timer", label: "Timer 5 mnt" },
   { id: "timer-15", icon: "timer", label: "Timer 15 mnt" },
   { id: "timer-25", icon: "timer", label: "Timer 25 mnt", sepAfter: true },
+  { id: "feed", icon: "plus", label: "Kasih makan" },
+  { id: "play", icon: "zap", label: "Ajak main", sepAfter: true },
   { id: "toggle-wander", icon: "move", label: "Jalan otomatis" },
   { id: "cycle-wander-pace", icon: "zap", label: "Kecepatan jalan" },
   { id: "cycle-wander-dir", icon: "moveX", label: "Arah jalan", sepAfter: true },

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
-  CITY_COORDS, cleanCityName, describeCode, getCachedWeather, getWeather, resolveCoords,
+  CITY_COORDS, cleanCityName, describeCode, getCachedWeather, getWeather, resolveCoords, weatherGroup,
 } from "./weather";
 
 beforeEach(() => { localStorage.clear(); });
@@ -112,5 +112,15 @@ describe("getWeather (cache-first)", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("weatherGroup (reaksi pet)", () => {
+  it("hujan / cerah / awan", () => {
+    expect(weatherGroup(61)).toBe("rain");
+    expect(weatherGroup(95)).toBe("rain");
+    expect(weatherGroup(0)).toBe("clear");
+    expect(weatherGroup(3)).toBe("cloud");
+    expect(weatherGroup(undefined)).toBe("cloud");
   });
 });

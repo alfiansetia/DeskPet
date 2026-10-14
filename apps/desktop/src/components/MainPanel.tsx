@@ -9,6 +9,7 @@ import { toast } from "../lib/notify";
 import { availableVoices, speak, stopSpeech, ttsSupported } from "../lib/tts";
 import { CAT_PALETTES, CUSTOM_PALETTE_ID } from "../features/pet/palettes";
 import { PET_SPECIES, type PetSpecies } from "../features/pet/species";
+import { HATS, unlockedHats } from "../features/pet/hats";
 import { PrayerView } from "../features/prayer/PrayerView";
 
 export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "settings" | "log";
@@ -23,6 +24,7 @@ interface Props {
   bump: () => void;
   timerStart: (secs: number, label?: string) => void;
   timerLeft: number | null;
+  onCare?: (kind: "feed" | "play") => void;
 }
 
 const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
@@ -56,7 +58,7 @@ export function MainPanel(p: Props) {
         {p.tab === "calendar" && <Calendar bump={p.bump} rkey={p.refreshKey} />}
         {p.tab === "prayer" && <PrayerView settings={p.settings} setSettings={p.setSettings} bump={p.bump} />}
         {p.tab === "auto" && <Automations bump={p.bump} rkey={p.refreshKey} />}
-        {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} />}
+        {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} onCare={p.onCare} />}
         {p.tab === "log" && <LogView />}
       </div>
     </div>
@@ -480,8 +482,69 @@ function Automations({ bump, rkey }: { bump: () => void; rkey: number }) {
   );
 }
 
+/* ---------------- Kondisi pet (Tamagotchi-lite) ---------------- */
+function CareView({ settings, onCare }: { settings: DeskSettings; onCare?: (kind: "feed" | "play") => void }) {
+  const st = settings.petStats ?? { hunger: 100, mood: 100, energy: 100, updatedAt: "" };
+  const bar = (label: string, v: number) => (
+    <div className="dp-row" style={{ alignItems: "center" }}>
+      <span className="dp-muted" style={{ minWidth: 52, fontSize: 12 }}>{label}</span>
+      <div className="dp-bar" role="progressbar" aria-label={label} aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100}>
+        <div className={`dp-bar-fill${v < 25 ? " low" : ""}`} style={{ width: `${Math.max(0, Math.min(100, v))}%` }} />
+      </div>
+      <span className="dp-muted" style={{ fontSize: 12, minWidth: 34 }}>{Math.round(v)}</span>
+    </div>
+  );
+  return (
+    <div className="dp-field" style={{ marginTop: 4 }}>
+      <span className="dp-muted">Kondisi pet</span>
+      {bar("Kenyang", st.hunger)}
+      {bar("Mood", st.mood)}
+      {bar("Energi", st.energy)}
+      {onCare && (
+        <div className="dp-row" style={{ marginTop: 4 }}>
+          <button className="dp-btn sm" onClick={() => onCare("feed")} title="Kenyang 100%">🍗 Makan</button>
+          <button className="dp-btn sm" onClick={() => onCare("play")} title="Mood 100%">🎾 Main</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Topi (unlock via elusan) ---------------- */
+function HatView({ settings, upd }: { settings: DeskSettings; upd: (patch: Partial<DeskSettings>) => void }) {
+  const total = settings.pettingTotal ?? 0;
+  const open = unlockedHats(total);
+  const openIds = new Set(open.map((h) => h.id));
+  return (
+    <div className="dp-field" style={{ marginTop: 4 }}>
+      <span className="dp-muted">Topi · {total} elusan</span>
+      <div className="dp-swatches" role="radiogroup" aria-label="Topi">
+        {HATS.map((h) => {
+          const unlocked = openIds.has(h.id);
+          const active = (settings.activeHat || "none") === h.id;
+          return (
+            <button
+              key={h.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={!unlocked}
+              title={unlocked ? h.name : `${h.name} · 🔒 ${h.unlockPets} elusan`}
+              className={`dp-swatch${active ? " on" : ""}`}
+              onClick={() => upd({ activeHat: h.id })}
+              style={{ fontSize: 16 }}
+            >
+              {unlocked ? (h.emoji || "🚫") : "🔒"}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Settings ---------------- */
-function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSettings: (s: DeskSettings) => void }) {
+function SettingsView({ settings, setSettings, onCare }: { settings: DeskSettings; setSettings: (s: DeskSettings) => void; onCare?: (kind: "feed" | "play") => void }) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const upd = (patch: Partial<DeskSettings>) => {
     const next = { ...settings, ...patch, telemetryEnabled: false as const };
@@ -606,6 +669,8 @@ function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSe
             )}
           </div>
         </div>
+      <CareView settings={settings} onCare={onCare} />
+      <HatView settings={settings} upd={upd} />
       <div className="dp-row" style={{ alignItems: "center" }}>
         <label htmlFor="dp-scale" style={{ minWidth: 110 }}>Ukuran pet {Math.round((settings.petScale ?? 1) * 100)}%</label>
         <input id="dp-scale" type="range" min={0.5} max={2} step={0.1}

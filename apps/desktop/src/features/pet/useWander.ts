@@ -56,6 +56,11 @@ export function shouldCenterPet(centerOnAlert: boolean | undefined, panelOpen: b
   return centerOnAlert !== false && !panelOpen;
 }
 
+/** Sisi kursor relatif ke tengah pet (untuk menoleh): kanan -> 1, kiri -> -1. */
+export function sideOf(cursorX: number, centerX: number): 1 | -1 {
+  return cursorX >= centerX ? 1 : -1;
+}
+
 /** Padding sprite (CSS px) dari rect .dp-pet-wrap terhadap viewport window. */
 export function spritePads(
   vw: number, vh: number,

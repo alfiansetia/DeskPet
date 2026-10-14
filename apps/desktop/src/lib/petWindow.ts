@@ -90,6 +90,17 @@ export function measurePetContentHeight(effectiveScale: number): number {
     if (speechH > 0) total += speechH;
     if (tempH > 0) total += tempH + 2;
     if (miniH > 0) total += miniH + 2;
+    // Overlay mengambang (sapaan/hati/emote): absolute di atas stack, di atas
+    // pill (--above). Ambil yang tertinggi agar tak kepotong window.
+    const ov = (sel: string, base: number): number => {
+      const h = hOf(sel);
+      return h > 0 ? h + base : 0;
+    };
+    total += Math.max(
+      ov(".dp-pet-stack > .dp-greet", 6),
+      ov(".dp-pet-stack > .dp-hearts", 2),
+      ov(".dp-pet-stack > .dp-micro-emote", 18),
+    );
     total += Math.ceil(petH);
     if (statusH > 0) total += 6 + statusH;
     total += anchoredBottom ? 10 : 8; // padding-bottom root

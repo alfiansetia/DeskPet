@@ -2,6 +2,7 @@
 import { loadJSON, saveJSON } from "./storage";
 import { nowUTC } from "./time";
 import { characterIdFor, isPetSpecies, type PetSpecies } from "../features/pet/species";
+import { normalizeStats, type PetStats } from "../features/pet/care";
 
 export type ReminderStatus = "active" | "completed" | "dismissed" | "snoozed";
 export type RecurrenceRule = "none" | "daily" | "weekdays" | "weekly";
@@ -87,6 +88,9 @@ export interface DeskSettings {
   centerOnAlert: boolean;
   weatherEnabled: boolean;
   tempBubbleEnabled: boolean;
+  pettingTotal: number;
+  activeHat: string;
+  petStats: PetStats;
 }
 
 export const DEFAULT_SETTINGS: DeskSettings = {
@@ -113,6 +117,9 @@ export const DEFAULT_SETTINGS: DeskSettings = {
   centerOnAlert: true,
   weatherEnabled: true,
   tempBubbleEnabled: true,
+  pettingTotal: 0,
+  activeHat: "none",
+  petStats: { hunger: 100, mood: 100, energy: 100, updatedAt: new Date(0).toISOString() },
 };
 
 /** Validate + fill defaults for a raw settings object (local cache or backend blob). */
@@ -151,7 +158,12 @@ export function normalizeSettings(raw: Partial<DeskSettings>): DeskSettings {
   const centerOnAlert = typeof raw.centerOnAlert === "boolean" ? raw.centerOnAlert : true;
   const weatherEnabled = typeof raw.weatherEnabled === "boolean" ? raw.weatherEnabled : true;
   const tempBubbleEnabled = typeof raw.tempBubbleEnabled === "boolean" ? raw.tempBubbleEnabled : true;
-  return { ...DEFAULT_SETTINGS, ...raw, telemetryEnabled: false as const, petScale: scale, wanderPace, wanderDirection, prayerReminderMins, petSpecies, petPaletteId, petCustomColor, characterId, centerOnAlert, weatherEnabled, tempBubbleEnabled };
+  const pettingTotal = typeof raw.pettingTotal === "number" && Number.isFinite(raw.pettingTotal) && raw.pettingTotal >= 0
+    ? Math.floor(raw.pettingTotal)
+    : 0;
+  const activeHat = typeof raw.activeHat === "string" && raw.activeHat.length > 0 ? raw.activeHat : "none";
+  const petStats = normalizeStats(raw.petStats);
+  return { ...DEFAULT_SETTINGS, ...raw, telemetryEnabled: false as const, petScale: scale, wanderPace, wanderDirection, prayerReminderMins, petSpecies, petPaletteId, petCustomColor, characterId, centerOnAlert, weatherEnabled, tempBubbleEnabled, pettingTotal, activeHat, petStats };
 }
 
 export function loadSettings(): DeskSettings {

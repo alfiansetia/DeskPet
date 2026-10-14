@@ -5,6 +5,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import App from "./App";
+import { isPettingRhythm } from "./App";
 import { toast } from "./lib/notify";
 
 function seedDueReminder() {
@@ -34,5 +35,14 @@ describe("App single alert", () => {
     const el = await screen.findByText("Timer dimulai");
     expect(el.closest(".dp-toast")).not.toBeNull();
     expect(document.querySelector("[data-testid='alert-bubble']")).toBeNull();
+  });
+});
+
+describe("isPettingRhythm", () => {
+  it("klik <800ms setelah dielus bukan double-click panel", () => {
+    expect(isPettingRhythm(1000, 1500)).toBe(true);
+    expect(isPettingRhythm(1000, 1799)).toBe(true);
+    expect(isPettingRhythm(1000, 1800)).toBe(false);
+    expect(isPettingRhythm(0, 10_000)).toBe(false);
   });
 });
