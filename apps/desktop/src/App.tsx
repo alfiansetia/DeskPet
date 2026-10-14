@@ -19,6 +19,7 @@ import {
   type PrayerDay,
 } from "./features/prayer/prayer";
 import { isQuietHours } from "./lib/time";
+import { petWindowLogicalSize, measurePetContentHeight } from "./lib/petWindow";
 
 /**
  * DeskPet shell: pet interaktif (drag kiri, klik = react, klik kanan = menu,
@@ -130,35 +131,46 @@ export default function App() {
 
   // Window size: compact pet vs expanded panel vs context menu
   // (the 230px context menu cannot fit in the 220px pet window).
-  // Pet window grows with effective scale (alert -> 200%) so it isn't clipped.
-  // Bubble/mini pill di atas pet juga butuh ruang: tanpa ini bubble kepotong
-  // setengah oleh batas jendela OS.
+  // Window DIPELUK ke sprite (tight, bukan 220px longgar): area transparan
+  // yang ikut memblokir klik window di belakang jadi minimal dan ikut
+  // mengecil/membesar bersama petScale. Sprite 128px + breathing 32px
+  // (16/sisi, ruang untuk bob/shadow/outline) -> 160px @scale 1.
+  // Pill/bubble/timer tetap melebarkan window sesuai kebutuhan kontennya.
   const petScale = settings.petScale ?? 1;
   const effectiveScale = alertEnlarged ? 2 : petScale;
   const reserveAlert = alertBubble !== null;
   const reserveMini = !reserveAlert && settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay !== null && panel === null;
   const reserveTimer = timerLeft !== null && settings.timerBadgeEnabled !== false;
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const w = getCurrentWindow();
         if (panel) {
           await w.setSize(new LogicalSize(400, 620 + (reserveAlert ? 190 : 0)));
-        } else if (menu) {
+          return;
+        }
+        if (menu) {
           await w.setSize(new LogicalSize(400, 560 + (reserveAlert ? 190 : 0)));
-        } else {
-          const base = Math.round(220 * effectiveScale);
-          const width = reserveAlert ? Math.max(base, 360) : reserveMini ? Math.max(base, 330) : base;
-          const height = base
-            + (reserveAlert ? 190 : 0)
-            + (reserveMini ? 38 : 0)
-            + (reserveTimer ? 28 : 0)
-            + 16;
-          await w.setSize(new LogicalSize(width, height));
+          return;
+        }
+        const guess = petWindowLogicalSize(effectiveScale, {
+          alert: reserveAlert, mini: reserveMini, timer: reserveTimer,
+        });
+        // Lebar final langsung dari tebakan (tetap, anti-flicker teks
+        // countdown tiap detik); tinggi dikoreksi dari hasil ukur DOM agar
+        // bubble sepanjang apa pun tidak kepotong.
+        await w.setSize(new LogicalSize(guess.width, guess.height));
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+        if (cancelled) return;
+        const height = measurePetContentHeight(effectiveScale);
+        if (Math.abs(height - guess.height) > 2) {
+          await w.setSize(new LogicalSize(guess.width, height));
         }
       } catch { /* web preview uses CSS */ }
     })();
-  }, [panel, menu, effectiveScale, reserveAlert, reserveMini, reserveTimer]);
+    return () => { cancelled = true; };
+  }, [panel, menu, effectiveScale, reserveAlert, reserveMini, reserveTimer, alertBubble]);
 
   // Scheduler tick (PRD §5.2: DB = source of truth, no duplicate, missed handling)
   useEffect(() => {

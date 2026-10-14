@@ -52,7 +52,7 @@ export function spritePads(
   vw: number, vh: number,
   r: { left: number; top: number; right: number; bottom: number } | null | undefined,
 ): WanderPads {
-  const F = 46;
+  const F = 16; // window tight (sprite 128px + breathing) -> padding kecil
   if (!r) return { padL: F, padR: F, padT: F, padB: F };
   return {
     padL: Math.max(0, r.left),
@@ -197,26 +197,26 @@ export function useWander({
           pos = { x: p.x, y: p.y };
           scale = await w.scaleFactor().catch(() => 1);
           const mon = await currentMonitor().catch(() => null);
-          // Ukuran window AKTUAL (diukur, bukan asumsi 220px): App me-resize
-          // window sesuai konten — 330px saat pill countdown, 360px saat
-          // bubble, 2x saat alert. Asumsi 220px bikin sprite overshoot kanan
-          // + undershoot kiri selebar selisihnya.
-          let winW = Math.round(220 * scale);
-          let winH = Math.round(220 * scale);
+          // Ukuran window AKTUAL (diukur, bukan asumsi): App me-resize window
+          // tight mengikuti sprite (128px*scale + breathing), melebar saat
+          // pill countdown / bubble / alert. Fallback pakai innerWidth agar
+          // tetap dinamis bila outerSize gagal dibaca.
+          let winW = Math.round((window.innerWidth || 160) * scale);
+          let winH = Math.round((window.innerHeight || 168) * scale);
           try {
             const s = await w.outerSize();
             if (s.width > 0 && s.height > 0) { winW = s.width; winH = s.height; }
-          } catch { /* fallback 220 */ }
+          } catch { /* fallback innerWidth */ }
           // Posisi sprite di DALAM window (CSS px, diukur live): sprite selalu
           // di tengah horizontal; vertikal tergantung bubble/panel. Dengan
           // begitu batas mentok cocok di semua ukuran window & skala device.
-          let pads: WanderPads = { padL: 46, padR: 46, padT: 46, padB: 46 };
+          let pads: WanderPads = { padL: 16, padR: 16, padT: 16, padB: 16 };
           try {
-            const vw = window.innerWidth || 220;
-            const vh = window.innerHeight || 220;
+            const vw = window.innerWidth || 160;
+            const vh = window.innerHeight || 168;
             const r = document.querySelector(".dp-pet-wrap")?.getBoundingClientRect();
             if (r && r.width > 0 && r.height > 0) pads = spritePads(vw, vh, r);
-          } catch { /* fallback 46 */ }
+          } catch { /* fallback 16 */ }
 
           if (mon) {
             // Work-area (taskbar dikecualikan) hanya valid untuk monitor utama

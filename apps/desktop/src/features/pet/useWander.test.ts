@@ -12,7 +12,7 @@ describe("wander bounds (mentok tepi)", () => {
     // viewport 330x274, sprite 128x128 di tengah horizontal, 136px dari atas
     const r = { left: 101, top: 136, right: 229, bottom: 264 };
     expect(spritePads(330, 274, r)).toEqual({ padL: 101, padR: 101, padT: 136, padB: 10 });
-    expect(spritePads(220, 220, null)).toEqual({ padL: 46, padR: 46, padT: 46, padB: 46 });
+    expect(spritePads(160, 168, null)).toEqual({ padL: 16, padR: 16, padT: 16, padB: 16 });
   });
 
   it("tauriBounds: sprite MENTOK atas + atas taskbar di monitor utama", () => {

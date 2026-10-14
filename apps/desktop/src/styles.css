@@ -214,7 +214,7 @@ html, body, #root {
 
 /* Toasts */
 .dp-toasts { position: fixed; left: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 60; -webkit-app-region: no-drag; }
-.dp-toast { background: rgba(34,34,58,0.94); color: #fff; border-radius: 10px; padding: 6px 10px; font-size: 12px; max-width: 300px; }
+.dp-toast { background: rgba(34,34,58,0.94); color: #fff; border-radius: 10px; padding: 6px 10px; font-size: 12px; max-width: min(300px, calc(100vw - 16px)); box-sizing: border-box; }
 .dp-toast.reminder { background: #5c50b8; }
 .dp-toast.error { background: #d95c69; }
 .dp-toast.success { background: #3f9b78; }
