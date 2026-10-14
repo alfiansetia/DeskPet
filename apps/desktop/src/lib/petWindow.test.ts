@@ -38,13 +38,14 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
   afterEach(() => vi.restoreAllMocks());
 
   function mockDom(o: {
-    petH?: number; speechH?: number; miniH?: number; statusH?: number; hasBubble?: boolean;
+    petH?: number; speechH?: number; miniH?: number; statusH?: number; hasBubble?: boolean; hasStatus?: boolean;
   }) {
     vi.spyOn(document, "querySelector").mockImplementation((sel: string) => {
       if (sel === ".dp-pet-wrap") {
         return o.petH ? { getBoundingClientRect: () => ({ height: o.petH }) } as unknown as Element : null;
       }
       if (sel === ".dp-root.has-bubble") return (o.hasBubble ? {} : null) as unknown as Element;
+      if (sel === ".dp-root.has-status") return (o.hasStatus ? {} : null) as unknown as Element;
       const map: Record<string, number | undefined> = {
         ".dp-root > .dp-speech": o.speechH,
         ".dp-root > .dp-bubble-mini": o.miniH,
@@ -62,9 +63,9 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
   });
 
   it("bubble pendek: tinggi = konten + margin layout", () => {
-    // pet 128 + napas 8 + bubble 100 + margin 2 + padding bawah 10 + pengaman 2
+    // pet 128 + napas 8 + bubble 100 + margin 2 + padding bawah 10 + pengaman 8
     mockDom({ petH: 128, speechH: 100, hasBubble: true });
-    expect(measurePetContentHeight(1)).toBe(8 + 100 + 2 + 128 + 10 + 2);
+    expect(measurePetContentHeight(1)).toBe(8 + 100 + 2 + 128 + 10 + 8);
   });
 
   it("bubble panjang (judul pengingat panjang): window ikut meninggi", () => {
@@ -72,12 +73,17 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
     vi.restoreAllMocks();
     mockDom({ petH: 128, speechH: 260, hasBubble: true });
     const tall = measurePetContentHeight(1);
-    expect(tall).toBe(8 + 260 + 2 + 128 + 10 + 2);
+    expect(tall).toBe(8 + 260 + 2 + 128 + 10 + 8);
     expect(tall).toBeGreaterThan(short);
   });
 
   it("pill mini + badge timer ikut dihitung", () => {
     mockDom({ petH: 64, miniH: 23, statusH: 26, hasBubble: true });
-    expect(measurePetContentHeight(0.5)).toBe(8 + 23 + 4 + 64 + 6 + 26 + 10 + 2);
+    expect(measurePetContentHeight(0.5)).toBe(8 + 23 + 4 + 64 + 6 + 26 + 10 + 8);
+  });
+
+  it("badge timer saja: konten dijangkar bawah (padding 10)", () => {
+    mockDom({ petH: 128, statusH: 26, hasStatus: true });
+    expect(measurePetContentHeight(1)).toBe(8 + 128 + 6 + 26 + 10 + 8);
   });
 });

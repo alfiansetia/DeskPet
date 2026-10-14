@@ -568,7 +568,7 @@ export default function App() {
 
   return (
     <div
-      className={`dp-root${panel ? " with-panel" : ""}${(alertBubble || miniNext) && !panel ? " has-bubble" : ""}`}
+      className={`dp-root${panel ? " with-panel" : ""}${(alertBubble || miniNext) && !panel ? " has-bubble" : ""}${reserveTimer && !panel ? " has-status" : ""}`}
       onContextMenu={onCtxMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

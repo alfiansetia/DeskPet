@@ -53,6 +53,8 @@ export function measurePetContentHeight(effectiveScale: number): number {
       return el ? Math.ceil(el.offsetHeight) : 0;
     };
     const hasBubble = !!document.querySelector(".dp-root.has-bubble");
+    const hasStatus = !!document.querySelector(".dp-root.has-status");
+    const anchoredBottom = hasBubble || hasStatus; // padding-bottom root 10
     const speechH = hOf(".dp-root > .dp-speech"); // margin-bottom 2
     const miniH = hOf(".dp-root > .dp-bubble-mini"); // margin-bottom 4
     const statusH = hOf(".dp-root > .dp-status"); // margin-top 6
@@ -61,8 +63,8 @@ export function measurePetContentHeight(effectiveScale: number): number {
     if (miniH > 0) total += miniH + 4;
     total += Math.ceil(petH);
     if (statusH > 0) total += 6 + statusH;
-    total += hasBubble ? 10 : 8; // padding-bottom root
-    return Math.max(Math.ceil(total) + 2, minH); // +2 pengaman pembulatan
+    total += anchoredBottom ? 10 : 8; // padding-bottom root
+    return Math.max(Math.ceil(total) + 8, minH); // +8 pengaman font-scale/pembulatan
   } catch {
     return minH;
   }

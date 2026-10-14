@@ -123,7 +123,12 @@ html, body, #root {
   .dp-pet, .dp-pet * { animation: none !important; transition: none !important; }
 }
 
-.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; transition: transform 220ms ease; }
+.dp-pet-wrap { -webkit-app-region: no-drag; cursor: grab; transform-origin: center center; }
+/* Catatan: JANGAN tambah transition transform di sini. Skala wrap dipakai
+   sebagai pengukur ukuran window (measurePetContentHeight): transisi bikin
+   getBoundingClientRect terbaca di tengah animasi -> window terukur
+   kekecilan -> label bawah nyempil kepotong. Flip kiri/kanan juga harus
+   instan (transisi bikin sprite "menyapu" lewat scaleX 0). */
 .dp-pet-wrap:active { cursor: grabbing; }
 /* Saat ada pesan penting: pet membesar 200% (via effectiveScale) + glow emas */
 .dp-pet-wrap.dp-alert { cursor: pointer; }
@@ -174,6 +179,10 @@ html, body, #root {
 /* Bubble menempel tepat di atas pet: konten dijangkarkan ke bawah jendela
    (tanpa ini bubble+pet di tengah vertikal sehingga ada space kosong di atas). */
 .dp-root.has-bubble:not(.with-panel) { justify-content: flex-end; padding-bottom: 10px; }
+/* Badge timer di bawah pet juga dijangkarkan ke bawah: kalau window kurang
+   tinggi sesaat (mis. di tengah transisi ukuran), yang kepotong sisa napas
+   ATAS duluan, label bawah tetap utuh terbaca. */
+.dp-root.has-status:not(.with-panel) { justify-content: flex-end; padding-bottom: 10px; }
 .dp-panel {
   -webkit-app-region: no-drag;
   margin-top: 8px; width: 384px; max-width: calc(100vw - 16px); max-height: 400px;
@@ -213,7 +222,7 @@ html, body, #root {
 .dp-settings { display: flex; flex-direction: column; gap: 2px; }
 
 /* Toasts */
-.dp-toasts { position: fixed; left: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 60; -webkit-app-region: no-drag; }
+.dp-toasts { position: fixed; left: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 60; -webkit-app-region: no-drag; max-height: calc(100vh - 16px); overflow: auto; }
 .dp-toast { background: rgba(34,34,58,0.94); color: #fff; border-radius: 10px; padding: 6px 10px; font-size: 12px; max-width: min(300px, calc(100vw - 16px)); box-sizing: border-box; }
 .dp-toast.reminder { background: #5c50b8; }
 .dp-toast.error { background: #d95c69; }
