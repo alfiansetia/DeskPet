@@ -14,7 +14,7 @@ apps/desktop/              # Aplikasi Tauri 2 + React + TypeScript
     features/assistant/    # parser NL deterministik ID/EN + validasi aksi
     lib/                   # store (localStorage), time, notify, tts, storage
   src-tauri/               # Backend Rust: SQLite, pet state, actions/permission, settings, tray, window
-assets/characters/         # Paket aset karakter (cat, snake, frog — recolorable: spritesheets, SVG, manifest)
+assets/characters/         # Paket aset karakter (cat, snake, frog, owl, penguin — recolorable: spritesheets, SVG, manifest)
 docs/                      # Dokumentasi: architecture, build, privacy, testing
 .ai/                       # Panduan & rules pengembangan
 ```

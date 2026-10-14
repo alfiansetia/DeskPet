@@ -1065,7 +1065,7 @@ export default function App() {
         <MainPanel tab={panel} setTab={setPanel} onClose={() => setPanel(null)}
           settings={settings} setSettings={setSettings}
           refreshKey={refreshKey} bump={bump} timerStart={timerStart} timerLeft={timerLeft} onCare={onCare}
-          companions={companions} setCompanions={(c) => { saveCompanions(c); setCompanions(c); }} />
+          companions={companions} setCompanions={(c) => { saveCompanions(c); setCompanions(c); }} ownId={ownId} />
       )}
 
       <div className="dp-toasts" aria-live="polite">

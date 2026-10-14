@@ -14,7 +14,7 @@ pub const MAX_COMPANIONS: usize = 5;
 /// - "main" -> "pet" (primary, backward-compat)
 /// - lain   -> "pet-{id}"
 pub fn window_label_for(id: &str) -> String {
-    if (id == MAIN_COMPANION_ID) {
+    if id == MAIN_COMPANION_ID {
         "pet".to_string()
     } else {
         format!("pet-{id}")
@@ -23,11 +23,11 @@ pub fn window_label_for(id: &str) -> String {
 
 /// Companion id dari label window. Tak dikenal -> "main" (fallback aman).
 pub fn companion_id_from_label(label: &str) -> String {
-    if (label == "pet") {
+    if label == "pet" {
         return MAIN_COMPANION_ID.to_string();
     }
     if let Some(id) = label.strip_prefix("pet-") {
-        if (is_valid_companion_id(id)) {
+        if is_valid_companion_id(id) {
             return id.to_string();
         }
     }
@@ -36,7 +36,7 @@ pub fn companion_id_from_label(label: &str) -> String {
 
 /// ID valid: "main" atau `c_` + 1..32 char alnum lowercase.
 pub fn is_valid_companion_id(id: &str) -> bool {
-    if (id == MAIN_COMPANION_ID) {
+    if id == MAIN_COMPANION_ID {
         return true;
     }
     let rest = match id.strip_prefix("c_") {
@@ -67,7 +67,7 @@ impl PetRegistry {
     pub fn set(&self, id: &str, next: PetState) -> Result<PetState, String> {
         let mut guard = self.0.lock().map_err(|e| e.to_string())?;
         let cur = guard.get(id).copied().unwrap_or_default();
-        if (!cur.can_transition_to(next)) {
+        if !cur.can_transition_to(next) {
             return Err(format!(
                 "transition {} -> {} not allowed",
                 cur.as_str(),

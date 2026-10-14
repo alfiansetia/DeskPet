@@ -74,7 +74,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 fn set_pet_visible(app: &tauri::AppHandle, visible: bool) {
     // Multi-pet (opsi B): tray Show/Hide berlaku ke SEMUA window `pet*`.
     for (label, w) in app.webview_windows() {
-        if (label == "pet" || label.starts_with("pet-")) {
+        if label == "pet" || label.starts_with("pet-") {
             let _ = if visible { w.show() } else { w.hide() };
         }
     }

@@ -121,11 +121,11 @@ export function normalizeCompanionList(raw: unknown): Companion[] {
 }
 
 export function defaultNameFor(species: PetSpecies, id: string): string {
+  const label = species === "cat" ? "Kucing" : species === "snake" ? "Ular" : species === "frog" ? "Kodok" : species === "owl" ? "Hantu" : "Pinpin";
   if (id === MAIN_COMPANION_ID) {
-    return species === "cat" ? "Kucing" : species === "snake" ? "Ular" : "Kodok";
+    return label;
   }
-  const base = species === "cat" ? "Kucing" : species === "snake" ? "Ular" : "Kodok";
-  return `${base} ${id.slice(2, 6)}`;
+  return `${label} ${id.slice(2, 6)}`;
 }
 
 /** Migrasi simpanan single-pet lama -> daftar companions (pet lama jadi "main"). */

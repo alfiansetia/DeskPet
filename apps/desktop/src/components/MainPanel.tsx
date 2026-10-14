@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { parseCommand, validateAction, type ActionRequest } from "../features/assistant/parser";
 import { addCompanion, loadCompanions, removeCompanion, saveCompanions, updateCompanion, exportBackup, importBackup, loadSettings, saveSettings, store, uid, MAIN_COMPANION_ID, MAX_COMPANIONS, type Automation, type CalEvent, type Companion, type DeskSettings, type Note, type RecurrenceRule, type Reminder, type Todo, type WanderPace, type WanderDirection } from "../lib/store";
-import { COMPANION_ROLES, normalizeCompanionList, type CompanionRole } from "../features/pet/companions";
+import { COMPANION_ROLES, defaultNameFor, normalizeCompanionList, type CompanionRole } from "../features/pet/companions";
 import { formatDue, isQuietHours, nextOccurrence, parseDurationSeconds, parseNaturalDateTime, toUTCISOString } from "../lib/time";
 import { recurrenceLabel, relDue, reminderBadge, splitReminders } from "../lib/reminders";
 import { Icon, type IconName } from "./Icon";
@@ -31,6 +31,8 @@ interface Props {
   onCare?: (kind: "feed" | "play") => void;
   companions?: Companion[];
   setCompanions?: (c: Companion[]) => void;
+  /** Companion pemilik window tempat panel ini dibuka (double-click pet itu). */
+  ownId?: string;
 }
 
 const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
@@ -71,7 +73,7 @@ export function MainPanel(p: Props) {
         {p.tab === "calendar" && <Calendar bump={p.bump} rkey={p.refreshKey} />}
         {p.tab === "prayer" && <PrayerView settings={p.settings} setSettings={p.setSettings} bump={p.bump} />}
         {p.tab === "auto" && <Automations bump={p.bump} rkey={p.refreshKey} />}
-        {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} onCare={p.onCare} companions={companions} setCompanions={setCompanions} />}
+        {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} onCare={p.onCare} companions={companions} setCompanions={setCompanions} ownId={p.ownId} />}
         {p.tab === "log" && <LogView />}
       </div>
     </div>
@@ -557,9 +559,18 @@ function HatView({ settings, upd }: { settings: DeskSettings; upd: (patch: Parti
 }
 
 /* ---------------- Kawan desktop (multi-pet, 1 window per karakter) ---------------- */
+/** Patch ganti spesies: nama ikut diperbarui hanya bila masih nama default lama. */
+function speciesPatch(cur: Companion, species: PetSpecies): Partial<Companion> {
+  return cur.name === defaultNameFor(cur.species, cur.id)
+    ? { species, name: defaultNameFor(species, cur.id) }
+    : { species };
+}
 function CompanionsView({ companions, setCompanions }: { companions: Companion[]; setCompanions: (c: Companion[]) => void }) {
   const [form, setForm] = useState<{ species: PetSpecies; paletteId: string; role: CompanionRole }>({ species: "cat", paletteId: "peach", role: "all" });
   const list = normalizeCompanionList(companions.length > 0 ? companions : loadCompanions());
+  // Multi-window hanya ada di aplikasi desktop (Tauri). Di preview web / test,
+  // daftar tetap tersimpan tapi window baru tidak bisa dibuka.
+  const isDesktop = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   const notifyChanged = () => {
     try {
       void Promise.resolve(emit("deskpet://companions-changed", "changed")).catch(() => { /* preview */ });
@@ -573,14 +584,29 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
     const next = loadCompanions();
     setCompanions(next);
     notifyChanged();
-    try { await invoke("companions_spawn", { id: added.id }); }
-    catch { /* web preview: daftar tersimpan, window baru hanya di desktop */ }
+    if (!isDesktop) {
+      toast("Tersimpan di daftar", "Mode preview web tidak bisa membuka window baru. Jalankan aplikasi desktop (npm run tauri dev) agar tiap karakter tampil di window-nya.", "info");
+      return;
+    }
+    try {
+      await invoke("companions_spawn", { id: added.id });
+    } catch (e) {
+      toast("Window gagal dibuka", `Karakter tersimpan, tapi window gagal dibuka (${e instanceof Error ? e.message : String(e)}). Coba lagi via tombol kaca pembesar di kartunya.`, "error");
+      return;
+    }
     toast(`${added.name} bergabung`, "Window baru terbuka untuk karakter ini.", "success");
   };
 
   const doShow = async (id: string) => {
-    try { await invoke("companions_spawn", { id }); }
-    catch { toast("Preview web", "Multi-window hanya jalan di aplikasi desktop.", "info"); }
+    if (!isDesktop) {
+      toast("Preview web", "Multi-window hanya jalan di aplikasi desktop.", "info");
+      return;
+    }
+    try {
+      await invoke("companions_spawn", { id });
+    } catch (e) {
+      toast("Gagal membuka window", e instanceof Error ? e.message : String(e), "error");
+    }
   };
 
   const doRemove = async (id: string) => {
@@ -596,71 +622,116 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
 
   const doRole = (id: string, role: CompanionRole) => doPatch(id, { role });
 
+  const doSpecies = (id: string, species: PetSpecies) => {
+    const cur = list.find((c) => c.id === id);
+    doPatch(id, cur ? speciesPatch(cur, species) : { species });
+  };
+
   return (
     <div className="dp-field" style={{ marginTop: 4 }} data-testid="companions-field">
       <span className="dp-muted">Kawan desktop · {list.length}/{MAX_COMPANIONS}</span>
       <div className="dp-muted" style={{ fontSize: 12 }}>Tiap karakter jalan di window-nya sendiri + punya tugas (role) sendiri.</div>
-      <div className="dp-list" data-testid="companions-list">
+      {!isDesktop && (
+        <div className="dp-muted" style={{ fontSize: 12 }}>Mode preview web: daftar tersimpan, tapi window baru hanya terbuka di aplikasi desktop.</div>
+      )}
+      <div className="dp-comp-list" data-testid="companions-list">
         {list.map((c) => {
           const sp = PET_SPECIES.find((s) => s.id === c.species);
           const pal = CAT_PALETTES.find((p) => p.id === c.paletteId);
           const isMain = c.id === MAIN_COMPANION_ID;
           return (
-            <div key={c.id} className="dp-item" data-testid={`companion-${c.id}`}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 6, background: pal?.bodyMain ?? "#8E82EB", display: "inline-block" }} />
-                <div style={{ flex: 1 }}>
+            <div key={c.id} className="dp-comp-card" data-testid={`companion-${c.id}`}>
+              <div className="dp-comp-head">
+                <span className="dp-comp-dot" aria-hidden="true" style={{ background: pal?.bodyMain ?? "#8E82EB" }} />
+                <div className="dp-comp-title">
                   <b>{c.name}</b>
                   <div className="dp-muted" style={{ fontSize: 12 }}>{sp?.icon} {sp?.name} · {pal?.name ?? c.paletteId}{isMain ? " · utama" : ""}</div>
                 </div>
+                {!isMain && (
+                  <div className="dp-comp-actions">
+                    <button className="dp-btn sm dp-icon-btn" onClick={() => void doShow(c.id)} title={`Buka/fokuskan window ${c.name}`} aria-label={`Tampilkan ${c.name}`}><Icon name="zoomIn" size={13} /></button>
+                    <button className="dp-btn sm dp-icon-btn danger" onClick={() => void doRemove(c.id)} title={`Tutup window + hapus ${c.name}`} aria-label={`Hapus ${c.name}`}><Icon name="trash" size={13} /></button>
+                  </div>
+                )}
               </div>
-              <div className="dp-row" style={{ marginTop: 6 }}>
-                <select className="dp-in" style={{ padding: "4px 8px", fontSize: 12 }} aria-label={`Tugas ${c.name}`}
-                  value={c.role} onChange={(e) => doRole(c.id, e.target.value as CompanionRole)}>
-                  {COMPANION_ROLES.map((r) => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-                <label className="dp-check" style={{ fontSize: 12 }} title="Tampilkan pill suhu di pet ini">
+              <div className="dp-comp-grid">
+                <label className="dp-comp-label">Spesies
+                  <select className="dp-in" aria-label={`Spesies ${c.name}`}
+                    value={c.species} onChange={(e) => doSpecies(c.id, e.target.value as PetSpecies)}>
+                    {PET_SPECIES.map((s) => (
+                      <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="dp-comp-label">Tugas
+                  <select className="dp-in" aria-label={`Tugas ${c.name}`}
+                    value={c.role} onChange={(e) => doRole(c.id, e.target.value as CompanionRole)}>
+                    {COMPANION_ROLES.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="dp-comp-label">Warna
+                  <select className="dp-in" aria-label={`Warna ${c.name}`}
+                    title="Warna karakter ini"
+                    value={CAT_PALETTES.some((p) => p.id === c.paletteId) ? c.paletteId : "custom"}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "custom") return; // custom via Pengaturan → Warna custom
+                      doPatch(c.id, { paletteId: v, customColor: "" });
+                    }}>
+                    {CAT_PALETTES.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                    {!CAT_PALETTES.some((p) => p.id === c.paletteId) && (
+                      <option value="custom">Custom {c.customColor}</option>
+                    )}
+                  </select>
+                </label>
+              </div>
+              <div className="dp-comp-toggles">
+                <label className="dp-check" title="Tampilkan pill suhu di pet ini">
                   <input type="checkbox" checked={c.showTemp !== false}
                     onChange={(e) => doPatch(c.id, { showTemp: e.target.checked })} /> Suhu
                 </label>
-                <label className="dp-check" style={{ fontSize: 12 }} title="Tampilkan pill countdown sholat di pet ini">
+                <label className="dp-check" title="Tampilkan pill countdown sholat di pet ini">
                   <input type="checkbox" checked={c.showMini !== false}
                     onChange={(e) => doPatch(c.id, { showMini: e.target.checked })} /> Mini
                 </label>
-                {!isMain && (
-                  <>
-                    <button className="dp-btn sm" onClick={() => void doShow(c.id)} title="Buka/fokuskan window karakter ini">Tampilkan</button>
-                    <button className="dp-btn sm" onClick={() => void doRemove(c.id)} title="Tutup window + hapus karakter ini"><Icon name="trash" size={13} /></button>
-                  </>
-                )}
               </div>
             </div>
           );
         })}
       </div>
       {list.length < MAX_COMPANIONS && (
-        <div className="dp-row" style={{ marginTop: 6 }}>
-          <select className="dp-in" style={{ padding: "4px 8px", fontSize: 12 }} aria-label="Spesies baru"
-            value={form.species} onChange={(e) => setForm({ ...form, species: e.target.value as PetSpecies })}>
-            {PET_SPECIES.map((s) => (
-              <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
-            ))}
-          </select>
-          <select className="dp-in" style={{ padding: "4px 8px", fontSize: 12 }} aria-label="Warna baru"
-            value={form.paletteId} onChange={(e) => setForm({ ...form, paletteId: e.target.value })}>
-            {CAT_PALETTES.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          <select className="dp-in" style={{ padding: "4px 8px", fontSize: 12 }} aria-label="Tugas baru"
-            value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as CompanionRole })}>
-            {COMPANION_ROLES.map((r) => (
-              <option key={r.id} value={r.id}>{r.name}</option>
-            ))}
-          </select>
-          <button className="dp-btn sm primary" onClick={() => void doAdd()} title="Tambah karakter (window baru)">+ Tambah</button>
+        <div className="dp-comp-add">
+          <label className="dp-comp-label">Karakter
+            <select className="dp-in" aria-label="Spesies baru"
+              value={form.species} onChange={(e) => setForm({ ...form, species: e.target.value as PetSpecies })}>
+              {PET_SPECIES.map((s) => (
+                <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="dp-comp-label">Warna
+            <select className="dp-in" aria-label="Warna baru"
+              value={form.paletteId} onChange={(e) => setForm({ ...form, paletteId: e.target.value })}>
+              {CAT_PALETTES.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="dp-comp-label">Tugas
+            <select className="dp-in" aria-label="Tugas baru"
+              value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as CompanionRole })}>
+              {COMPANION_ROLES.map((r) => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+          </label>
+          <div className="dp-comp-add-btn">
+            <button className="dp-btn sm primary" style={{ width: "100%" }} onClick={() => void doAdd()} title="Tambah karakter (window baru)">+ Tambah</button>
+          </div>
         </div>
       )}
     </div>
@@ -668,7 +739,7 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
 }
 
 /* ---------------- Settings ---------------- */
-function SettingsView({ settings, setSettings, onCare, companions, setCompanions }: { settings: DeskSettings; setSettings: (s: DeskSettings) => void; onCare?: (kind: "feed" | "play") => void; companions: Companion[]; setCompanions: (c: Companion[]) => void }) {
+function SettingsView({ settings, setSettings, onCare, companions, setCompanions, ownId }: { settings: DeskSettings; setSettings: (s: DeskSettings) => void; onCare?: (kind: "feed" | "play") => void; companions: Companion[]; setCompanions: (c: Companion[]) => void; ownId?: string }) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const upd = (patch: Partial<DeskSettings>) => {
     const next = { ...settings, ...patch, telemetryEnabled: false as const };
@@ -678,6 +749,20 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
   const [voices, setVoices] = useState<{ name: string; lang: string }[]>([]);
   useEffect(() => { setVoices(availableVoices()); const t = setTimeout(() => setVoices(availableVoices()), 800); return () => clearTimeout(t); }, []);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Pengaturan karakter/warna di sini milik companion PEMILIK WINDOW ini
+  // (panel dibuka via double-click pet itu). Window pet merender companion
+  // (me.paletteId ?? settings.petPaletteId), jadi tanpa sync ini ganti
+  // warna/spesies tidak terlihat karena companion membayangi settings.
+  const target = companions.find((c) => c.id === (ownId ?? MAIN_COMPANION_ID))
+    ?? companions.find((c) => c.id === MAIN_COMPANION_ID)
+    ?? companions[0];
+  const syncTarget = (patch: Partial<Companion>) => {
+    if (!target) return;
+    setCompanions(updateCompanion(target.id, patch));
+    try {
+      void Promise.resolve(emit("deskpet://companions-changed", "changed")).catch(() => { /* preview */ });
+    } catch { /* preview */ }
+  };
 
   const doExport = () => {
     const blob = new Blob([exportBackup()], { type: "application/json" });
@@ -736,13 +821,13 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
         </div>
       )}
       <div className="dp-row" style={{ alignItems: "center" }}>
-        <label htmlFor="dp-species" style={{ minWidth: 110 }}>Karakter pet</label>
+        <label htmlFor="dp-species" style={{ minWidth: 110 }}>Karakter {target ? target.name : "pet"} (window ini)</label>
         <select
           id="dp-species"
           className="dp-in"
           style={{ flex: 1, padding: "4px 8px" }}
-          value={settings.petSpecies || "cat"}
-          onChange={(e) => upd({ petSpecies: e.target.value as PetSpecies })}
+          value={target?.species ?? settings.petSpecies ?? "cat"}
+          onChange={(e) => { const v = e.target.value as PetSpecies; upd({ petSpecies: v }); if (target) syncTarget(speciesPatch(target, v)); }}
         >
           {PET_SPECIES.map((s) => (
             <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
@@ -750,10 +835,10 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
         </select>
       </div>
       <div className="dp-field" style={{ marginTop: 2 }}>
-        <span className="dp-muted">Warna karakter</span>
+        <span className="dp-muted">Warna {target ? target.name : "karakter"} (window ini · lainnya via daftar Kawan di bawah)</span>
           <div className="dp-swatches" role="radiogroup" aria-label="Warna karakter">
             {CAT_PALETTES.map((pal) => {
-              const active = (settings.petPaletteId || "lavender") === pal.id;
+              const active = (target?.paletteId ?? settings.petPaletteId ?? "lavender") === pal.id;
               return (
                 <button
                   key={pal.id}
@@ -763,22 +848,22 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
                   title={pal.name}
                   className={`dp-swatch${active ? " on" : ""}`}
                   style={{ background: pal.bodyMain }}
-                  onClick={() => upd({ petPaletteId: pal.id })}
+                  onClick={() => { upd({ petPaletteId: pal.id, petCustomColor: "" }); syncTarget({ paletteId: pal.id, customColor: "" }); }}
                 >
                   <span className="dp-swatch-dot" style={{ background: pal.bodyLight }} />
                 </button>
               );
             })}
             <label
-              className={`dp-swatch custom${settings.petPaletteId === CUSTOM_PALETTE_ID ? " on" : ""}`}
+              className={`dp-swatch custom${(target?.paletteId ?? settings.petPaletteId) === CUSTOM_PALETTE_ID ? " on" : ""}`}
               title="Warna custom"
-              style={{ background: settings.petCustomColor || "#8E82EB" }}
+              style={{ background: (target ? target.customColor : settings.petCustomColor) || "#8E82EB" }}
             >
               <input
                 type="color"
                 aria-label="Warna custom"
-                value={/^#[0-9a-fA-F]{6}$/.test(settings.petCustomColor || "") ? settings.petCustomColor : "#8E82EB"}
-                onChange={(e) => upd({ petPaletteId: CUSTOM_PALETTE_ID, petCustomColor: e.target.value })}
+                value={/^#[0-9a-fA-F]{6}$/.test((target ? target.customColor : settings.petCustomColor) || "") ? (target ? target.customColor : settings.petCustomColor) as string : "#8E82EB"}
+                onChange={(e) => { upd({ petPaletteId: CUSTOM_PALETTE_ID, petCustomColor: e.target.value }); syncTarget({ paletteId: CUSTOM_PALETTE_ID, customColor: e.target.value }); }}
                 style={{ opacity: 0, width: "100%", height: "100%", cursor: "pointer", position: "absolute", inset: 0 }}
               />
               <span aria-hidden="true" style={{ fontSize: 12 }}>🎨</span>
@@ -786,12 +871,12 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
           </div>
           <div className="dp-row" style={{ marginTop: 4 }}>
             <span className="dp-muted" style={{ fontSize: 12 }}>
-              {settings.petPaletteId === CUSTOM_PALETTE_ID
-                ? `Custom ${settings.petCustomColor || "—"} · shading dibuat otomatis`
-                : `${CAT_PALETTES.find((x) => x.id === (settings.petPaletteId || "lavender"))?.name ?? "Lavender"} · mata & detail tidak berubah`}
+              {(target?.paletteId ?? settings.petPaletteId) === CUSTOM_PALETTE_ID
+                ? `Custom ${(target ? target.customColor : settings.petCustomColor) || "—"} · shading dibuat otomatis`
+                : `${CAT_PALETTES.find((x) => x.id === (target?.paletteId ?? settings.petPaletteId ?? "lavender"))?.name ?? "Lavender"} · mata & detail tidak berubah`}
             </span>
-            {settings.petPaletteId !== "lavender" && (
-              <button className="dp-btn sm" onClick={() => upd({ petPaletteId: "lavender", petCustomColor: "" })}>Reset</button>
+            {(target?.paletteId ?? settings.petPaletteId) !== "lavender" && (
+              <button className="dp-btn sm" onClick={() => { upd({ petPaletteId: "lavender", petCustomColor: "" }); syncTarget({ paletteId: "lavender", customColor: "" }); }}>Reset</button>
             )}
           </div>
         </div>

@@ -1,0 +1,39 @@
+{
+  "id": "deskpet.penguin",
+  "name": "Penguin",
+  "version": "1.0.0",
+  "format": "spritesheet-png",
+  "license": "CC0-1.0",
+  "author": "DeskPet Project",
+  "description": "Original pixel-art companion penguin: egg-round body, wide white belly, round eyes with blush, small locked-amber triangle beak, side flippers, orange feet, 2px head tuft (recolorable base). Default palette is lavender/indigo; alternate palettes are applied at runtime, adhering to PRD §13 specifications.",
+  "frameWidth": 128,
+  "frameHeight": 128,
+  "source": "penguin.svg",
+  "preview": "preview.png",
+  "generator": "generate.mjs",
+  "recolorable": true,
+  "defaultPalette": "lavender",
+  "recolorTokens": ["bodyMain", "bodyLight", "bodyShadow", "belly"],
+  "animations": {
+    "idle": "idle.png",
+    "walk": "walk.png",
+    "dragged": "dragged.png",
+    "jump": "jump.png",
+    "sleep": "sleep.png",
+    "react": "react.png",
+    "speak": "speak.png",
+    "attention": "attention.png",
+    "reminder": "reminder.png"
+  },
+  "animationDetails": {
+    "idle": { "frames": 4, "fps": 3, "file": "idle.png" },
+    "walk": { "frames": 6, "fps": 6, "file": "walk.png" },
+    "dragged": { "frames": 2, "fps": 2, "file": "dragged.png" },
+    "jump": { "frames": 4, "fps": 5, "file": "jump.png" },
+    "sleep": { "frames": 4, "fps": 2, "file": "sleep.png" },
+    "react": { "frames": 4, "fps": 4, "file": "react.png" },
+    "speak": { "frames": 4, "fps": 5, "file": "speak.png" },
+    "attention": { "frames": 4, "fps": 4, "file": "attention.png" },
+    "reminder": { "frames": 4, "fps": 4, "file": "reminder.png" }
+  }
+}

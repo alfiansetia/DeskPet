@@ -5,6 +5,8 @@ const BASE: Record<PetSpecies, string[]> = {
   cat: ["meow!", "hai!", "semangat ya!", "kamu hebat!", "sini sini~", "dielus dong~", "hari ini ceria!"],
   snake: ["ssst hai!", "melata dulu~", "kepala dingin~", "santai kayak ular~", "hai hai!"],
   frog: ["ribbit!", "lompat yuk!", "hai!", "kodok hadir!", "cebur!"],
+  owl: ["huhu!", "melek terus!", "fokus yuk!", "malam-malam semangat!", "huhu hai!"],
+  penguin: ["waddle waddle!", "dingin-dingin seru!", "hai!", "jalan-jalan yuk!", "quack~ eh!"],
 };
 const RAIN = ["hujan nih, di dalam aja ya~", "dingin! jangan kehujanan~", "enak denger hujan~"];
 const HUNGRY = ["laper nih, minta makan dong", "perut bunyi...", "kapan makan?"];

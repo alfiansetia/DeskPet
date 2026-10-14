@@ -43,7 +43,7 @@ pub fn pet_set_state(
 /// agar frontend tidak diam-diam mengendalikan pet yang salah.
 #[tauri::command]
 pub fn pet_get_state_of(registry: State<'_, PetRegistry>, id: String) -> Result<PetState, String> {
-    if (!is_valid_companion_id(&id)) {
+    if !is_valid_companion_id(&id) {
         return Err("unknown companion id (rejected)".into());
     }
     Ok(registry.get(&id))
@@ -56,12 +56,12 @@ pub fn pet_set_state_of(
     id: String,
     next: String,
 ) -> Result<PetState, String> {
-    if (!is_valid_companion_id(&id)) {
+    if !is_valid_companion_id(&id) {
         return Err("unknown companion id (rejected)".into());
     }
     let next_state = PetState::from_str(&next)?;
     let applied = registry.set(&id, next_state)?;
-    if (id == MAIN_COMPANION_ID) {
+    if id == MAIN_COMPANION_ID {
         if let Ok(mut g) = state.0.lock() {
             *g = applied;
         }
@@ -181,10 +181,10 @@ pub fn companions_spawn(
     registry: State<'_, PetRegistry>,
     id: String,
 ) -> Result<serde_json::Value, String> {
-    if (!is_valid_companion_id(&id)) {
+    if !is_valid_companion_id(&id) {
         return Err("unknown companion id (rejected)".into());
     }
-    if (id != MAIN_COMPANION_ID && registry.list().len() >= MAX_COMPANIONS) {
+    if id != MAIN_COMPANION_ID && registry.list().len() >= MAX_COMPANIONS {
         return Err("companion limit reached (max 5)".into());
     }
     registry.ensure(&id);
@@ -231,10 +231,10 @@ pub fn companions_despawn(
     registry: State<'_, PetRegistry>,
     id: String,
 ) -> Result<serde_json::Value, String> {
-    if (!is_valid_companion_id(&id)) {
+    if !is_valid_companion_id(&id) {
         return Err("unknown companion id (rejected)".into());
     }
-    if (id == MAIN_COMPANION_ID) {
+    if id == MAIN_COMPANION_ID {
         return Err("cannot despawn primary pet".into());
     }
     let label = window_label_for(&id);

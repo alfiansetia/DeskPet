@@ -279,6 +279,25 @@ html, body, #root {
 .dp-check { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 13px; }
 .dp-settings { display: flex; flex-direction: column; gap: 2px; }
 
+/* Kawan desktop: kartu vertikal agar tidak overflow di panel sempit.
+   (Pengganti .dp-row nowrap yang membuat tombol Tampilkan + hapus meluber.) */
+.dp-comp-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; min-width: 0; }
+.dp-comp-card { border: 1px solid rgba(34,34,58,0.1); border-radius: 12px; padding: 8px 10px; background: #fafaff; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dp-comp-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dp-comp-dot { flex: none; width: 18px; height: 18px; border-radius: 6px; display: inline-block; }
+.dp-comp-title { flex: 1; min-width: 0; }
+.dp-comp-title b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-comp-actions { display: flex; gap: 6px; flex: none; }
+.dp-icon-btn { padding: 3px 7px; }
+.dp-icon-btn.danger { color: #d95c69; }
+.dp-comp-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+.dp-comp-label { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--dp-muted); min-width: 0; }
+.dp-comp-label .dp-in { flex: none; width: 100%; max-width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 12px; }
+.dp-comp-toggles { display: flex; gap: 12px; flex-wrap: wrap; }
+.dp-comp-toggles .dp-check { font-size: 12px; padding: 0; }
+.dp-comp-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin-top: 8px; align-items: end; }
+.dp-comp-add-btn { grid-column: 1 / -1; }
+
 /* Toasts */
 .dp-toasts { position: fixed; left: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 60; -webkit-app-region: no-drag; max-height: calc(100vh - 16px); overflow: auto; }
 .dp-toast { background: rgba(34,34,58,0.94); color: #fff; border-radius: 10px; padding: 6px 10px; font-size: 12px; max-width: min(300px, calc(100vw - 16px)); box-sizing: border-box; }
@@ -377,6 +396,12 @@ html, body, #root {
 
 /* Placeholder fallback kodok: geser hue ungu -> hijau */
 .dp-pet--species-frog:not(.dp-pet--has-sprite) { filter: hue-rotate(-125deg) saturate(1.1); }
+
+/* Placeholder fallback burung hantu: ungu agak cokelat keemasan */
+.dp-pet--species-owl:not(.dp-pet--has-sprite) { filter: hue-rotate(-40deg) saturate(1.05); }
+
+/* Placeholder fallback penguin: ungu -> biru es */
+.dp-pet--species-penguin:not(.dp-pet--has-sprite) { filter: hue-rotate(35deg) saturate(1.15); }
 
 /* Bubble suhu: pill kecil menumpuk DI ATAS pill sholat (urutan DOM = urutan tumpuk) */
 .dp-bubble-temp {

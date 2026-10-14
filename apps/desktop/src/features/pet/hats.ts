@@ -18,6 +18,8 @@ export const HAT_ANCHORS: Record<PetSpecies, HatAnchor> = {
   cat: { dx: 0, top: -16, size: 30 },
   snake: { dx: 22, top: 6, size: 26 },
   frog: { dx: 0, top: 10, size: 28 },
+  owl: { dx: 0, top: 0, size: 28 },
+  penguin: { dx: 0, top: 6, size: 28 },
 };
 
 export function hatById(id: string | undefined): Hat {

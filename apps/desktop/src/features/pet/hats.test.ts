@@ -3,7 +3,7 @@ import { HAT_ANCHORS, HATS, hatById, newlyUnlocked, unlockedHats, validActiveHat
 
 describe("hats", () => {
   it("jangkar ada untuk semua spesies", () => {
-    for (const sp of ["cat", "snake", "frog"] as const) {
+    for (const sp of ["cat", "snake", "frog", "owl", "penguin"] as const) {
       const a = HAT_ANCHORS[sp];
       expect(a.size).toBeGreaterThan(0);
     }
