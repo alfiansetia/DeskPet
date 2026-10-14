@@ -443,6 +443,20 @@ function SettingsView({ settings, setSettings }: { settings: DeskSettings; setSe
         </div>
       )}
       <div className="dp-row" style={{ alignItems: "center" }}>
+        <label htmlFor="dp-character" style={{ minWidth: 110 }}>Karakter pet</label>
+        <select
+          id="dp-character"
+          className="dp-in"
+          style={{ flex: 1, padding: "4px 8px" }}
+          value={settings.characterId || "deskpet.cat.lavender"}
+          onChange={(e) => upd({ characterId: e.target.value })}
+        >
+          <option value="deskpet.cat.lavender">💜 Lavender Cat</option>
+          <option value="deskpet.cat.orange">🧡 Orange Cat (Tabby)</option>
+          <option value="deskpet.cat.black">🖤 Black Cat (Mystic)</option>
+        </select>
+      </div>
+      <div className="dp-row" style={{ alignItems: "center" }}>
         <label htmlFor="dp-scale" style={{ minWidth: 110 }}>Ukuran pet {Math.round((settings.petScale ?? 1) * 100)}%</label>
         <input id="dp-scale" type="range" min={0.5} max={2} step={0.1}
           value={settings.petScale ?? 1}

@@ -36,4 +36,19 @@ describe("PetCanvas", () => {
     expect(el).toHaveAttribute("data-render-mode", "placeholder");
     expect(screen.queryByTestId("pet-sprite")).not.toBeInTheDocument();
   });
+
+  it("correctly resolves sprite paths for orange-cat and black-cat", () => {
+    const { unmount } = render(
+      <PetCanvas state="walk" reducedMotion={false} characterId="deskpet.cat.orange" onTap={vi.fn()} />
+    );
+    let sprite = screen.getByTestId("pet-sprite");
+    expect(sprite.style.backgroundImage).toContain("/assets/characters/orange-cat/walk.png");
+    unmount();
+
+    render(
+      <PetCanvas state="idle" reducedMotion={false} characterId="deskpet.cat.black" onTap={vi.fn()} />
+    );
+    sprite = screen.getByTestId("pet-sprite");
+    expect(sprite.style.backgroundImage).toContain("/assets/characters/black-cat/idle.png");
+  });
 });
