@@ -93,6 +93,12 @@ pub fn run() {
     // Init local DB early; failure must not crash the pet window.
     // Path resolution happens at runtime; errors are logged, not panicked.
     tauri::Builder::default()
+        // Autostart (login items Windows / LaunchAgent macOS). Tanpa args
+        // khusus; frontend mengatur enable/disable via plugin JS API.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(PetVisibility(Mutex::new(true)))
         .manage(CurrentPetState(Mutex::new(PetState::Idle)))
         .manage(SharedSettings(Mutex::new(AppSettings::default())))

@@ -27,6 +27,7 @@ import { decayStats, feedStats, needsCare, playStats } from "./features/pet/care
 import { playPetSound } from "./lib/sfx";
 import { petWindowLogicalSize, measurePetContentHeight, measurePetContentWidth, resolveEffectiveScale, petWrapBox } from "./lib/petWindow";
 import { Bubble, SLOT_ROTATE_MS } from "./components/Bubble";
+import { ensureAutostart } from "./features/startup/autostart";
 import { keepWindowOnScreen } from "./lib/windowFit";
 
 /**
@@ -106,6 +107,9 @@ export default function App() {
   // Salinan tahan lama backend (file app-data) menang atas cache lokal bila ada.
   useEffect(() => {
     let cancelled = false;
+    // Autostart: samakan OS dengan niat user (pasang bila setting on tapi
+    // belum terpasang — "fix bila belum ada"). Best-effort, diam-diam.
+    void ensureAutostart(loadSettings().autoStart).catch(() => {});
     invoke<PetState>("pet_get_state").then((s) => { if (!cancelled) { petStateRef.current = s; setPetState(s); } })
       .catch(() => { if (!cancelled) setBackend("web-preview"); });
     invoke<boolean>("pet_is_visible").then((v) => { if (!cancelled) setVisible(v); }).catch(() => {});

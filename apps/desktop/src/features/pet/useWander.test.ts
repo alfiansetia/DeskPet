@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { clamp, nearestEdge, previewBounds, randomPointOnEdge, shouldCenterPet, sideOf, spritePads, tauriBounds, useWander, type EdgeIndex } from "./useWander";
 
@@ -105,18 +105,41 @@ describe("edges mode (keliling tepi layar)", () => {
     }
   });
 
-  it("tepi bersebelahan: langkah keliling tidak melintas tengah", () => {
-    // Dari titik mana pun di tepi 0 (atas), target di tepi 1/3 (samping):
-    // garisnya memotong sudut, titik tengah garis tetap di periferi
-    // (x dekat sisi atau y dekat sisi, tidak pernah di tengah dua-duanya).
+  it("s-range: target dibatasi setengah tepi dekat sudut bersama", () => {
+    // Tepi kanan (1): s=0 -> atas (y=0), s=1 -> bawah (y=500).
+    // Searah jarum jam (top->right): s di [0, 0.5] -> y di [0, 250].
+    const rnd = vi.spyOn(Math, "random");
+    try {
+      rnd.mockReturnValue(0);
+      expect(randomPointOnEdge(1, b, 0, 0.5)).toEqual({ x: 1000, y: 0 });
+      expect(randomPointOnEdge(1, b, 0.5, 1)).toEqual({ x: 1000, y: 250 });
+      rnd.mockReturnValue(0.9999);
+      const p1 = randomPointOnEdge(1, b, 0, 0.5);
+      expect(p1.y).toBeGreaterThanOrEqual(0);
+      expect(p1.y).toBeLessThanOrEqual(250);
+      const p2 = randomPointOnEdge(1, b, 0.5, 1);
+      expect(p2.y).toBeGreaterThanOrEqual(250);
+      expect(p2.y).toBeLessThanOrEqual(500);
+      // Full-range default tetap seluruh tepi.
+      const p3 = randomPointOnEdge(2, b);
+      expect(p3.y).toBe(500);
+      expect(p3.x).toBeGreaterThanOrEqual(0);
+      expect(p3.x).toBeLessThanOrEqual(1000);
+    } finally {
+      rnd.mockRestore();
+    }
+  });
+
+  it("langkah sudut: titik tengah garis tetap di kuadran sudut", () => {
+    // Dari tengah tepi atas (500,0) ke setengah-atas tepi kanan (x=1000,
+    // y<=250): titik tengah garis selalu di kuadran kanan-atas
+    // (x>=500, y<=250) — periferi, bukan tengah layar.
     const from = { x: 500, y: b.minY };
     for (let i = 0; i < 50; i++) {
-      const next = (i % 2 === 0 ? 1 : 3) as EdgeIndex;
-      const t = randomPointOnEdge(next, b);
+      const t = randomPointOnEdge(1, b, 0, 0.5);
       const mid = { x: (from.x + t.x) / 2, y: (from.y + t.y) / 2 };
-      const nearVertEdge = Math.min(mid.x - b.minX, b.maxX - mid.x) < 250;
-      const nearHorizEdge = Math.min(mid.y - b.minY, b.maxY - mid.y) < 125;
-      expect(nearVertEdge || nearHorizEdge).toBe(true);
+      expect(mid.x).toBeGreaterThanOrEqual(500);
+      expect(mid.y).toBeLessThanOrEqual(125);
     }
   });
 });

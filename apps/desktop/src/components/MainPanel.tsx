@@ -11,6 +11,7 @@ import { CAT_PALETTES, CUSTOM_PALETTE_ID } from "../features/pet/palettes";
 import { PET_SPECIES, type PetSpecies } from "../features/pet/species";
 import { HATS, unlockedHats } from "../features/pet/hats";
 import { PrayerView } from "../features/prayer/PrayerView";
+import { AutostartView } from "../features/startup/AutostartView";
 
 export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "settings" | "log";
 
@@ -572,6 +573,7 @@ function SettingsView({ settings, setSettings, onCare }: { settings: DeskSetting
     <div className="dp-settings">
       <label className="dp-check"><input type="checkbox" checked={settings.wanderEnabled} onChange={(e) => upd({ wanderEnabled: e.target.checked })} /> Jalan otomatis (walk)</label>
       <label className="dp-check"><input type="checkbox" checked={settings.centerOnAlert !== false} onChange={(e) => upd({ centerOnAlert: e.target.checked })} /> Kembali ke tengah layar saat alert penting</label>
+      <AutostartView settings={settings} upd={upd} />
       {settings.wanderEnabled && (
         <div style={{ marginLeft: 22, marginTop: -2, marginBottom: 8, display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="dp-row" style={{ alignItems: "center", margin: 0 }}>

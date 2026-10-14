@@ -86,6 +86,7 @@ export interface DeskSettings {
   timerBadgeEnabled: boolean;
   timerDoneAlertEnabled: boolean;
   centerOnAlert: boolean;
+  autoStart: boolean;
   weatherEnabled: boolean;
   tempBubbleEnabled: boolean;
   pettingTotal: number;
@@ -115,6 +116,7 @@ export const DEFAULT_SETTINGS: DeskSettings = {
   timerBadgeEnabled: true,
   timerDoneAlertEnabled: true,
   centerOnAlert: true,
+  autoStart: false,
   weatherEnabled: true,
   tempBubbleEnabled: true,
   pettingTotal: 0,
@@ -156,6 +158,7 @@ export function normalizeSettings(raw: Partial<DeskSettings>): DeskSettings {
   }
   const characterId = characterIdFor(petSpecies);
   const centerOnAlert = typeof raw.centerOnAlert === "boolean" ? raw.centerOnAlert : true;
+  const autoStart = typeof raw.autoStart === "boolean" ? raw.autoStart : false;
   const weatherEnabled = typeof raw.weatherEnabled === "boolean" ? raw.weatherEnabled : true;
   const tempBubbleEnabled = typeof raw.tempBubbleEnabled === "boolean" ? raw.tempBubbleEnabled : true;
   const pettingTotal = typeof raw.pettingTotal === "number" && Number.isFinite(raw.pettingTotal) && raw.pettingTotal >= 0
@@ -163,7 +166,7 @@ export function normalizeSettings(raw: Partial<DeskSettings>): DeskSettings {
     : 0;
   const activeHat = typeof raw.activeHat === "string" && raw.activeHat.length > 0 ? raw.activeHat : "none";
   const petStats = normalizeStats(raw.petStats);
-  return { ...DEFAULT_SETTINGS, ...raw, telemetryEnabled: false as const, petScale: scale, wanderPace, wanderDirection, prayerReminderMins, petSpecies, petPaletteId, petCustomColor, characterId, centerOnAlert, weatherEnabled, tempBubbleEnabled, pettingTotal, activeHat, petStats };
+  return { ...DEFAULT_SETTINGS, ...raw, telemetryEnabled: false as const, petScale: scale, wanderPace, wanderDirection, prayerReminderMins, petSpecies, petPaletteId, petCustomColor, characterId, centerOnAlert, autoStart, weatherEnabled, tempBubbleEnabled, pettingTotal, activeHat, petStats };
 }
 
 export function loadSettings(): DeskSettings {
