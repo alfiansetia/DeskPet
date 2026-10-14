@@ -1,7 +1,10 @@
 /** MainPanel: all PRD surfaces in one expandable window (P2–P4 local-first). */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { parseCommand, validateAction, type ActionRequest } from "../features/assistant/parser";
-import { exportBackup, importBackup, loadSettings, saveSettings, store, uid, type Automation, type CalEvent, type DeskSettings, type Note, type RecurrenceRule, type Reminder, type Todo, type WanderPace, type WanderDirection } from "../lib/store";
+import { addCompanion, loadCompanions, removeCompanion, saveCompanions, updateCompanion, exportBackup, importBackup, loadSettings, saveSettings, store, uid, MAIN_COMPANION_ID, MAX_COMPANIONS, type Automation, type CalEvent, type Companion, type DeskSettings, type Note, type RecurrenceRule, type Reminder, type Todo, type WanderPace, type WanderDirection } from "../lib/store";
+import { COMPANION_ROLES, normalizeCompanionList, type CompanionRole } from "../features/pet/companions";
 import { formatDue, isQuietHours, nextOccurrence, parseDurationSeconds, parseNaturalDateTime, toUTCISOString } from "../lib/time";
 import { recurrenceLabel, relDue, reminderBadge, splitReminders } from "../lib/reminders";
 import { Icon, type IconName } from "./Icon";
@@ -26,6 +29,8 @@ interface Props {
   timerStart: (secs: number, label?: string) => void;
   timerLeft: number | null;
   onCare?: (kind: "feed" | "play") => void;
+  companions?: Companion[];
+  setCompanions?: (c: Companion[]) => void;
 }
 
 const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
@@ -38,6 +43,13 @@ const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
 ];
 
 export function MainPanel(p: Props) {
+  // Multi-pet: fallback lokal agar caller lama (preview/test) tetap jalan.
+  const [localCompanions, setLocalCompanions] = useState<Companion[]>(() => loadCompanions());
+  const companions = p.companions ?? localCompanions;
+  const setCompanions = (c: Companion[]) => {
+    saveCompanions(c);
+    (p.setCompanions ?? setLocalCompanions)(c);
+  };
   return (
     <div className="dp-panel" data-testid="main-panel" role="dialog" aria-label="DeskPet panel">
       <div className="dp-panel-head">
@@ -59,7 +71,7 @@ export function MainPanel(p: Props) {
         {p.tab === "calendar" && <Calendar bump={p.bump} rkey={p.refreshKey} />}
         {p.tab === "prayer" && <PrayerView settings={p.settings} setSettings={p.setSettings} bump={p.bump} />}
         {p.tab === "auto" && <Automations bump={p.bump} rkey={p.refreshKey} />}
-        {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} onCare={p.onCare} />}
+        {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} onCare={p.onCare} companions={companions} setCompanions={setCompanions} />}
         {p.tab === "log" && <LogView />}
       </div>
     </div>
@@ -544,8 +556,119 @@ function HatView({ settings, upd }: { settings: DeskSettings; upd: (patch: Parti
   );
 }
 
+/* ---------------- Kawan desktop (multi-pet, 1 window per karakter) ---------------- */
+function CompanionsView({ companions, setCompanions }: { companions: Companion[]; setCompanions: (c: Companion[]) => void }) {
+  const [form, setForm] = useState<{ species: PetSpecies; paletteId: string; role: CompanionRole }>({ species: "cat", paletteId: "peach", role: "all" });
+  const list = normalizeCompanionList(companions.length > 0 ? companions : loadCompanions());
+  const notifyChanged = () => {
+    try {
+      void Promise.resolve(emit("deskpet://companions-changed", "changed")).catch(() => { /* preview */ });
+    } catch { /* preview */ }
+  };
+
+  const doAdd = async () => {
+    if (list.length >= MAX_COMPANIONS) { toast("Maksimal tercapai", `Maksimal ${MAX_COMPANIONS} karakter (hemat performa).`, "error"); return; }
+    const added = addCompanion({ species: form.species, paletteId: form.paletteId, role: form.role });
+    if (!added) { toast("Gagal menambah", "Coba lagi.", "error"); return; }
+    const next = loadCompanions();
+    setCompanions(next);
+    notifyChanged();
+    try { await invoke("companions_spawn", { id: added.id }); }
+    catch { /* web preview: daftar tersimpan, window baru hanya di desktop */ }
+    toast(`${added.name} bergabung`, "Window baru terbuka untuk karakter ini.", "success");
+  };
+
+  const doShow = async (id: string) => {
+    try { await invoke("companions_spawn", { id }); }
+    catch { toast("Preview web", "Multi-window hanya jalan di aplikasi desktop.", "info"); }
+  };
+
+  const doRemove = async (id: string) => {
+    try { await invoke("companions_despawn", { id }); } catch { /* lanjut hapus data */ }
+    setCompanions(removeCompanion(id));
+    notifyChanged();
+  };
+
+  const doPatch = (id: string, patch: Partial<Companion>) => {
+    setCompanions(updateCompanion(id, patch));
+    notifyChanged();
+  };
+
+  const doRole = (id: string, role: CompanionRole) => doPatch(id, { role });
+
+  return (
+    <div className="dp-field" style={{ marginTop: 4 }} data-testid="companions-field">
+      <span className="dp-muted">Kawan desktop · {list.length}/{MAX_COMPANIONS}</span>
+      <div className="dp-muted" style={{ fontSize: 12 }}>Tiap karakter jalan di window-nya sendiri + punya tugas (role) sendiri.</div>
+      <div className="dp-list" data-testid="companions-list">
+        {list.map((c) => {
+          const sp = PET_SPECIES.find((s) => s.id === c.species);
+          const pal = CAT_PALETTES.find((p) => p.id === c.paletteId);
+          const isMain = c.id === MAIN_COMPANION_ID;
+          return (
+            <div key={c.id} className="dp-item" data-testid={`companion-${c.id}`}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: 6, background: pal?.bodyMain ?? "#8E82EB", display: "inline-block" }} />
+                <div style={{ flex: 1 }}>
+                  <b>{c.name}</b>
+                  <div className="dp-muted" style={{ fontSize: 12 }}>{sp?.icon} {sp?.name} · {pal?.name ?? c.paletteId}{isMain ? " · utama" : ""}</div>
+                </div>
+              </div>
+              <div className="dp-row" style={{ marginTop: 6 }}>
+                <select className="dp-in" style={{ padding: "4px 8px", fontSize: 12 }} aria-label={`Tugas ${c.name}`}
+                  value={c.role} onChange={(e) => doRole(c.id, e.target.value as CompanionRole)}>
+                  {COMPANION_ROLES.map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+                <label className="dp-check" style={{ fontSize: 12 }} title="Tampilkan pill suhu di pet ini">
+                  <input type="checkbox" checked={c.showTemp !== false}
+                    onChange={(e) => doPatch(c.id, { showTemp: e.target.checked })} /> Suhu
+                </label>
+                <label className="dp-check" style={{ fontSize: 12 }} title="Tampilkan pill countdown sholat di pet ini">
+                  <input type="checkbox" checked={c.showMini !== false}
+                    onChange={(e) => doPatch(c.id, { showMini: e.target.checked })} /> Mini
+                </label>
+                {!isMain && (
+                  <>
+                    <button className="dp-btn sm" onClick={() => void doShow(c.id)} title="Buka/fokuskan window karakter ini">Tampilkan</button>
+                    <button className="dp-btn sm" onClick={() => void doRemove(c.id)} title="Tutup window + hapus karakter ini"><Icon name="trash" size={13} /></button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {list.length < MAX_COMPANIONS && (
+        <div className="dp-row" style={{ marginTop: 6 }}>
+          <select className="dp-in" style={{ padding: "4px 8px", fontSize: 12 }} aria-label="Spesies baru"
+            value={form.species} onChange={(e) => setForm({ ...form, species: e.target.value as PetSpecies })}>
+            {PET_SPECIES.map((s) => (
+              <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
+            ))}
+          </select>
+          <select className="dp-in" style={{ padding: "4px 8px", fontSize: 12 }} aria-label="Warna baru"
+            value={form.paletteId} onChange={(e) => setForm({ ...form, paletteId: e.target.value })}>
+            {CAT_PALETTES.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <select className="dp-in" style={{ padding: "4px 8px", fontSize: 12 }} aria-label="Tugas baru"
+            value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as CompanionRole })}>
+            {COMPANION_ROLES.map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+          <button className="dp-btn sm primary" onClick={() => void doAdd()} title="Tambah karakter (window baru)">+ Tambah</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- Settings ---------------- */
-function SettingsView({ settings, setSettings, onCare }: { settings: DeskSettings; setSettings: (s: DeskSettings) => void; onCare?: (kind: "feed" | "play") => void }) {
+function SettingsView({ settings, setSettings, onCare, companions, setCompanions }: { settings: DeskSettings; setSettings: (s: DeskSettings) => void; onCare?: (kind: "feed" | "play") => void; companions: Companion[]; setCompanions: (c: Companion[]) => void }) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const upd = (patch: Partial<DeskSettings>) => {
     const next = { ...settings, ...patch, telemetryEnabled: false as const };
@@ -673,6 +796,7 @@ function SettingsView({ settings, setSettings, onCare }: { settings: DeskSetting
           </div>
         </div>
       <CareView settings={settings} onCare={onCare} />
+      <CompanionsView companions={companions} setCompanions={setCompanions} />
       <HatView settings={settings} upd={upd} />
       <div className="dp-row" style={{ alignItems: "center" }}>
         <label htmlFor="dp-scale" style={{ minWidth: 110 }}>Ukuran pet {Math.round((settings.petScale ?? 1) * 100)}%</label>

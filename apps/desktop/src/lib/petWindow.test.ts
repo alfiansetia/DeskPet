@@ -89,7 +89,7 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
   afterEach(() => vi.restoreAllMocks());
 
   function mockDom(o: {
-    petH?: number; stackH?: number; speechH?: number; miniH?: number; tempH?: number; greetH?: number; heartsH?: number; emoteH?: number; statusH?: number; hasBubble?: boolean; hasStatus?: boolean;
+    petH?: number; stackH?: number; speechH?: number; miniH?: number; tempH?: number; greetH?: number; statusH?: number; hasBubble?: boolean; hasStatus?: boolean;
   }) {
     vi.spyOn(document, "querySelector").mockImplementation((sel: string) => {
       if (sel === ".dp-pet-wrap") {
@@ -105,10 +105,6 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
         ".dp-root > .dp-bubble-temp": o.tempH,
         ".dp-pet-stack > .dp-greet": o.greetH,
         "[data-testid='pet-stack'] > .dp-greet": o.greetH,
-        ".dp-pet-stack > .dp-hearts": o.heartsH,
-        "[data-testid='pet-stack'] > .dp-hearts": o.heartsH,
-        ".dp-pet-stack > .dp-micro-emote": o.emoteH,
-        "[data-testid='pet-stack'] > .dp-micro-emote": o.emoteH,
         ".dp-root > .dp-status": o.statusH,
       };
       const h = map[sel];
@@ -162,18 +158,6 @@ describe("measurePetContentHeight (bubble tidak kepotong)", () => {
     mockDom({ petH: 64, tempH: 20, miniH: 23, greetH: 22, hasBubble: true });
     // napas + temp + mini + sapaan(22+6) + pet + padding + pengaman
     expect(measurePetContentHeight(0.5)).toBe(6 + 20 + 2 + 23 + 2 + 22 + 6 + 64 + 10 + 8);
-  });
-
-  it("hati saat dielus mencadangkan travel animasi (+8, tidak kepotong)", () => {
-    mockDom({ petH: 64, heartsH: 18, hasBubble: true });
-    // napas + hati(18+8) + pet + padding + pengaman
-    expect(measurePetContentHeight(0.5)).toBe(6 + 18 + 8 + 64 + 10 + 8);
-  });
-
-  it("emote idle mencadangkan travel animasi (+26, tidak kepotong)", () => {
-    mockDom({ petH: 64, emoteH: 20, hasBubble: true });
-    // napas + emote(20+26) + pet + padding + pengaman
-    expect(measurePetContentHeight(0.5)).toBe(6 + 20 + 26 + 64 + 10 + 8);
   });
 
   it("badge timer saja: konten dijangkar bawah (padding 10)", () => {

@@ -3,6 +3,16 @@ import { loadJSON, saveJSON } from "./storage";
 import { nowUTC } from "./time";
 import { characterIdFor, isPetSpecies, type PetSpecies } from "../features/pet/species";
 import { normalizeStats, type PetStats } from "../features/pet/care";
+import {
+  MAIN_COMPANION_ID,
+  MAX_COMPANIONS,
+  migrateFromLegacy,
+  normalizeCompanion,
+  normalizeCompanionList,
+  uidCompanion,
+  type Companion,
+  type CompanionRole,
+} from "../features/pet/companions";
 
 export type ReminderStatus = "active" | "completed" | "dismissed" | "snoozed";
 export type RecurrenceRule = "none" | "daily" | "weekdays" | "weekly";
@@ -59,6 +69,7 @@ const K = {
   automations: "deskpet:automations",
   audit: "deskpet:audit",
   settings: "deskpet:settings",
+  companions: "deskpet:companions",
 };
 
 export type WanderPace = "random" | "slow" | "normal" | "fast";
@@ -212,7 +223,63 @@ export const store = {
     },
     clear() { saveJSON(K.audit, []); },
   },
+  companions: {
+    key: K.companions,
+    all(): Companion[] { return loadJSON<Companion[]>(K.companions, []); },
+    save(v: Companion[]) { saveJSON(K.companions, v.slice(0, MAX_COMPANIONS)); },
+  },
 };
+
+/** Muat daftar companion; migrasi dari settings single-pet lama bila kosong. */
+export function loadCompanions(fallbackLegacy?: {
+  petSpecies?: unknown; petPaletteId?: unknown; petCustomColor?: unknown; petScale?: unknown;
+}): Companion[] {
+  const raw = store.companions.all();
+  const list = normalizeCompanionList(raw);
+  if (list.length > 0) return list;
+  const migrated = migrateFromLegacy(fallbackLegacy ?? loadSettingsLegacyFields());
+  store.companions.save(migrated);
+  return migrated;
+}
+
+function loadSettingsLegacyFields(): Record<string, unknown> {
+  try {
+    return loadJSON<Record<string, unknown>>(K.settings, {});
+  } catch {
+    return {};
+  }
+}
+
+export function saveCompanions(list: Companion[]): Companion[] {
+  const norm = normalizeCompanionList(list);
+  store.companions.save(norm);
+  return norm;
+}
+
+/** Tambah companion baru (validasi max). Return null bila penuh. */
+export function addCompanion(input: Partial<Companion>): Companion | null {
+  const list = loadCompanions();
+  if (list.length >= MAX_COMPANIONS) return null;
+  const c = normalizeCompanion({ ...input, id: uidCompanion(), createdAt: new Date().toISOString() }, uidCompanion());
+  // normalizeCompanion keeps a valid provided id; force fresh uid di sini.
+  const fresh: Companion = { ...c, id: uidCompanion() };
+  const next = saveCompanions([...list, fresh]);
+  return next.find((x) => x.id === fresh.id) ?? null;
+}
+
+export function removeCompanion(id: string): Companion[] {
+  if (id === MAIN_COMPANION_ID) return loadCompanions(); // primary tidak bisa dihapus
+  return saveCompanions(loadCompanions().filter((c) => c.id !== id));
+}
+
+export function updateCompanion(id: string, patch: Partial<Companion>): Companion[] {
+  return saveCompanions(
+    loadCompanions().map((c) => (c.id === id ? normalizeCompanion({ ...c, ...patch, id }) : c)),
+  );
+}
+
+export type { Companion, CompanionRole };
+export { MAIN_COMPANION_ID, MAX_COMPANIONS };
 
 export function defaultAutomations(): Automation[] {
   const t = nowUTC();
@@ -226,10 +293,11 @@ export function defaultAutomations(): Automation[] {
 /** Full local backup (explicit user action, PRD §5.4). */
 export function exportBackup(): string {
   return JSON.stringify({
-    app: "deskpet", version: 1, exportedAt: nowUTC(),
+    app: "deskpet", version: 2, exportedAt: nowUTC(),
     reminders: store.reminders.all(), todos: store.todos.all(),
     notes: store.notes.all(), events: store.events.all(),
     automations: store.automations.all(), settings: loadSettings(),
+    companions: loadCompanions(),
   }, null, 2);
 }
 
@@ -243,6 +311,7 @@ export function importBackup(json: string): { ok: boolean; error?: string } {
     if (Array.isArray(d.events)) store.events.save(d.events);
     if (Array.isArray(d.automations)) store.automations.save(d.automations);
     if (d.settings && typeof d.settings === "object") saveSettings({ ...DEFAULT_SETTINGS, ...d.settings, telemetryEnabled: false });
+    if (Array.isArray(d.companions)) saveCompanions(normalizeCompanionList(d.companions));
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { PetCanvas } from "./components/PetCanvas/PetCanvas";
 import { MainPanel, schedulerTick, type PanelTab } from "./components/MainPanel";
@@ -10,7 +11,14 @@ import { useIdleBehavior } from "./features/pet/useIdleBehavior";
 import {
   TRANSIENT_STATES, TRANSIENT_TIMEOUT_MS, canTransitionTo, type PetState,
 } from "./features/pet/petStateMachine";
-import { loadSettings, saveSettings, store, uid, type DeskSettings, type WanderPace, type WanderDirection } from "./lib/store";
+import {
+  loadCompanions, loadSettings, saveCompanions, saveSettings, store, uid,
+  type Companion, type DeskSettings, type WanderPace, type WanderDirection,
+} from "./lib/store";
+import {
+  MAIN_COMPANION_ID, companionIdFromWindowLabel, phaseDelayMsFor, resolvePresenterFor,
+  slotPeriodJitterMsFor, slotPhaseFor,
+} from "./features/pet/companions";
 import { pullBackendSettings, pushBackendSettings } from "./lib/settingsSync";
 import { onToast, toast, type Toast } from "./lib/notify";
 import { speak, stopSpeech } from "./lib/tts";
@@ -42,6 +50,11 @@ export default function App() {
   const [petState, setPetState] = useState<PetState>("idle");
   const [visible, setVisible] = useState(true);
   const [settings, setSettings] = useState<DeskSettings>(() => loadSettings());
+  // Multi-pet (opsi B): window ini milik companion `ownId`; daftar shared via localStorage.
+  const [ownId, setOwnId] = useState<string>(MAIN_COMPANION_ID);
+  const [companions, setCompanions] = useState<Companion[]>(() => loadCompanions());
+  const me: Companion | undefined = companions.find((c) => c.id === ownId) ?? companions[0];
+  const isPrimary = ownId === MAIN_COMPANION_ID;
   const [backend, setBackend] = useState<string>("tauri");
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [panel, setPanel] = useState<null | PanelTab>(null);
@@ -60,8 +73,6 @@ export default function App() {
   panelRef.current = panel;
   const weatherRef = useRef<WeatherNow | null>(null);
 
-  // Micro-emote bubble (emoji kecil mengambang di atas karakter saat idle)
-  const [microEmote, setMicroEmote] = useState<string | null>(null);
   // CSS-only idle animation class (stretch / yawn / wiggle)
   const [idleAnimClass, setIdleAnimClass] = useState<string | null>(null);
   // Bubble sapaan teks (klik / habis dielus)
@@ -80,6 +91,10 @@ export default function App() {
   petStateRef.current = petState;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const ownIdRef = useRef(ownId);
+  ownIdRef.current = ownId;
+  const companionsRef = useRef(companions);
+  companionsRef.current = companions;
   // Backend sync gate: jangan push sebelum pull boot selesai,
   // agar default lokal tidak menimpa salinan tahan lama di backend.
   const backendSynced = useRef(false);
@@ -100,7 +115,39 @@ export default function App() {
     if (!canTransitionTo(prev, next)) return;
     petStateRef.current = next;
     setPetState(next);
-    try { await invoke("pet_set_state", { next }); } catch { /* preview */ }
+    const id = ownIdRef.current;
+    try {
+      if (id === MAIN_COMPANION_ID) await invoke("pet_set_state", { next });
+      else await invoke("pet_set_state_of", { id, next });
+    } catch {
+      try { await invoke("pet_set_state", { next }); } catch { /* preview */ }
+    }
+  }, []);
+
+  // Identitas window ini (multi-pet B): label `pet` = main, `pet-<id>` = sekunder.
+  // + live-reload daftar companion (storage event antar-window + event Tauri).
+  useEffect(() => {
+    try {
+      const label = getCurrentWindow().label;
+      const id = companionIdFromWindowLabel(label);
+      setOwnId(id);
+      // Fase awal rotasi pill per-pet agar tidak ganti barengan.
+      setSlotTick(slotPhaseFor(id));
+    } catch { /* web preview = main */ }
+    setCompanions(loadCompanions());
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === store.companions.key) setCompanions(loadCompanions());
+    };
+    window.addEventListener("storage", onStorage);
+    let unlisten: (() => void) | null = null;
+    try {
+      const p = listen("deskpet://companions-changed", () => setCompanions(loadCompanions()));
+      void (p as Promise<unknown>).then((u) => { unlisten = u as () => void; }).catch(() => {});
+    } catch { /* preview */ }
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      try { unlisten?.(); } catch { /* noop */ }
+    };
   }, []);
 
   // Init from Rust + settings.
@@ -110,8 +157,15 @@ export default function App() {
     // Autostart: samakan OS dengan niat user (pasang bila setting on tapi
     // belum terpasang — "fix bila belum ada"). Best-effort, diam-diam.
     void ensureAutostart(loadSettings().autoStart).catch(() => {});
-    invoke<PetState>("pet_get_state").then((s) => { if (!cancelled) { petStateRef.current = s; setPetState(s); } })
-      .catch(() => { if (!cancelled) setBackend("web-preview"); });
+    const myId = (() => {
+      try { return companionIdFromWindowLabel(getCurrentWindow().label); } catch { return MAIN_COMPANION_ID; }
+    })();
+    invoke<PetState>("pet_get_state_of", { id: myId })
+      .then((s) => { if (!cancelled) { petStateRef.current = s; setPetState(s); } })
+      .catch(() => {
+        invoke<PetState>("pet_get_state").then((s) => { if (!cancelled) { petStateRef.current = s; setPetState(s); } })
+          .catch(() => { if (!cancelled) setBackend("web-preview"); });
+      });
     invoke<boolean>("pet_is_visible").then((v) => { if (!cancelled) setVisible(v); }).catch(() => {});
     pullBackendSettings().then((remote) => {
       if (cancelled) return;
@@ -138,7 +192,45 @@ export default function App() {
     return () => clearTimeout(t);
   }, [petState, requestState]);
 
-  // Konfirmasi pesan: kecilkan pet ke ukuran semula + tutup bubble/toast + idle.
+  // Alert lokal: karakter membesar + bubble di atas pet sampai dikonfirmasi.
+  const presentLocalAlert = useCallback((title: string, body: string, icon: IconName) => {
+    void requestState("reminder");
+    setAlertEnlarged(true);
+    setAlertBubble({ title, body, icon });
+    maybeCenterPetRef.current();
+    toast(title, body, "reminder");
+    setTimeout(() => {
+      setAlertBubble((b) => (b?.title === title ? null : b));
+      setAlertEnlarged(false);
+    }, 60_000);
+  }, [requestState]);
+
+  // Scheduler terpusat jalan di primary; alert diteruskan ke presenter by role.
+  const routeOrPresent = useCallback((kind: "reminder" | "prayer" | "timer", title: string, body: string, icon: IconName) => {
+    const presenter = resolvePresenterFor(companionsRef.current, kind);
+    if (presenter && presenter.id !== ownIdRef.current) {
+      try {
+        void Promise.resolve(emit("deskpet://present-alert", { targetId: presenter.id, title, body, icon }))
+          .catch(() => { /* preview tanpa multi-window: tampilkan lokal */ presentLocalAlert(title, body, icon); });
+      } catch { /* preview: fallback lokal */ presentLocalAlert(title, body, icon); }
+      return;
+    }
+    presentLocalAlert(title, body, icon);
+  }, [presentLocalAlert]);
+
+  // Window sekunder: dengarkan alert yang dirutekan ke id-nya.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    try {
+      const p = listen("deskpet://present-alert", (ev) => {
+        const pl = (ev.payload ?? {}) as { targetId?: string; title?: string; body?: string; icon?: IconName };
+        if (pl.targetId !== ownIdRef.current || !pl.title) return;
+        presentLocalAlert(pl.title, pl.body ?? "", (pl.icon ?? "bell") as IconName);
+      });
+      void (p as Promise<unknown>).then((u) => { unlisten = u as () => void; }).catch(() => {});
+    } catch { /* preview */ }
+    return () => { try { unlisten?.(); } catch { /* noop */ } };
+  }, [presentLocalAlert]);
   const confirmAlert = useCallback(() => {
     setAlertEnlarged(false);
     setAlertBubble(null);
@@ -151,12 +243,6 @@ export default function App() {
     if (greetTimer.current) clearTimeout(greetTimer.current);
     setGreet({ text, key: Date.now() });
     greetTimer.current = setTimeout(() => setGreet(null), 2600);
-  }, []);
-
-  // Emote emoji kecil (2,4 dtk).
-  const showEmote = useCallback((emote: string) => {
-    setMicroEmote(emote);
-    setTimeout(() => setMicroEmote(null), 2400);
   }, []);
 
   // Konteks sapaan: hujan + lapar memengaruhi frasa.
@@ -188,11 +274,22 @@ export default function App() {
   // Pill/bubble/timer tetap melebarkan window sesuai kebutuhan kontennya.
   // Suhu kota sholat untuk bubble suhu (cache 15 mnt, refresh 10 mnt).
   const [weather, setWeather] = useState<WeatherNow | null>(() => getCachedWeather("1301"));
+  // Cache cuaca: dibaca SEMUA window dari cache shared (tanpa network) agar
+  // tiap pet bisa menampilkan pill suhu sendiri-sendiri. Refresh cache 60 dtk
+  // agar window sekunder ikut update setelah primary fetch dari network.
   useEffect(() => {
     if (settings.weatherEnabled === false) { setWeather(null); return; }
     const cityId = settings.prayerCityId ?? "1301";
-    const cityName = settings.prayerCityName ?? "KOTA JAKARTA";
     setWeather(getCachedWeather(cityId));
+    const id = setInterval(() => setWeather(getCachedWeather(cityId)), 60_000);
+    return () => clearInterval(id);
+  }, [settings.prayerCityId, settings.weatherEnabled]);
+  // Fetch network: HANYA primary (hemat kuota, anti-duplikat).
+  useEffect(() => {
+    if (!isPrimary) return;
+    if (settings.weatherEnabled === false) return;
+    const cityId = settings.prayerCityId ?? "1301";
+    const cityName = settings.prayerCityName ?? "KOTA JAKARTA";
     let stop = false;
     const run = async () => {
       const w = await getWeather(cityId, cityName);
@@ -201,56 +298,62 @@ export default function App() {
     void run();
     const id = setInterval(() => { void run(); }, 10 * 60_000);
     return () => { stop = true; clearInterval(id); };
-  }, [settings.prayerCityId, settings.prayerCityName, settings.weatherEnabled]);
+  }, [isPrimary, settings.prayerCityId, settings.prayerCityName, settings.weatherEnabled]);
   weatherRef.current = weather;
 
-  // Reaksi cuaca: transisi ke hujan -> emote + info sekali (tidak spam).
-  // Transisi ke cerah sengaja TANPA emote (mengganggu): cukup pill suhu.
+  // Reaksi cuaca: transisi ke hujan -> toast info sekali (tidak spam).
+  // Hanya primary yang bersuara agar N window tidak toast barengan.
   const wxGroupRef = useRef<string | null>(null);
   useEffect(() => {
+    if (!isPrimary) return;
     const g = weatherGroup(weather?.code);
     const prev = wxGroupRef.current;
     wxGroupRef.current = g;
     if (prev === null || prev === g || settings.weatherEnabled === false) return;
     if (g === "rain") {
-      showEmote("☔");
       toast(`Hujan di ${weather?.cityLabel ?? "kotamu"}`, "Di dalam aja ya~", "info");
     }
-  }, [weather, settings.weatherEnabled, showEmote]);
-  // Rotasi slot ambient (suhu <-> countdown sholat): ganti isi tiap
-  // SLOT_ROTATE_MS bila keduanya tersedia. Tick jalan terus di background
-  // agar tidak ada lompatan saat salah satu baru tersedia.
-  const slotCount = (settings.weatherEnabled !== false && settings.tempBubbleEnabled !== false && weather ? 1 : 0)
-    + (settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay ? 1 : 0);
-  const [slotTick, setSlotTick] = useState(0);
-  useEffect(() => {
-    if (slotCount < 2) return;
-    const id = setInterval(() => setSlotTick((t) => t + 1), SLOT_ROTATE_MS);
-    return () => clearInterval(id);
-  }, [slotCount]);
+  }, [isPrimary, weather, settings.weatherEnabled]);
   // Slot ambient di atas pet: SATU isi dalam satu waktu, bergantian tiap
-  // SLOT_ROTATE_MS (suhu <-> countdown sholat) via komponen <Bubble>.
+  // periode (suhu <-> countdown sholat) via komponen <Bubble>.
   // Sapaan hasil interaksi (klik/elus) menyela slot sementara; slot lanjut
-  // setelah overlay hilang. Emote idle kecil tetap melayang di atas slot
-  // via --above agar pill tidak kedip-kedip.
+  // setelah overlay hilang.
+  // Multi-pet B: fase awal + periode rotasi diacak per companion (hash id)
+  // agar pill tiap pet ganti tidak barengan dan tidak sinkron permanen.
   // Ditaruh di sini (bukan di bawah) karena dipakai efek resize window.
   const interactOverlay = alertBubble === null && panel === null && (petting || greet !== null);
+  // Multi-pet B: pill ambient tampil per-companion (default on); global
+  // weatherEnabled/tempBubbleEnabled/prayerEnabled/prayerMiniEnabled tetap berlaku.
+  const showTempPill = (me?.showTemp !== false)
+    && settings.weatherEnabled !== false && settings.tempBubbleEnabled !== false && weather;
+  const showMiniPill = (me?.showMini !== false)
+    && settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay;
   const slotItems: Array<"temp" | "mini"> = [
-    ...(settings.weatherEnabled !== false && settings.tempBubbleEnabled !== false && weather ? ["temp" as const] : []),
-    ...(settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay ? ["mini" as const] : []),
+    ...(showTempPill ? ["temp" as const] : []),
+    ...(showMiniPill ? ["mini" as const] : []),
   ];
+  // Rotasi jalan terus di background agar tidak ada lompatan saat salah satu
+  // pill baru tersedia.
+  const slotPeriodMs = SLOT_ROTATE_MS + slotPeriodJitterMsFor(ownId);
+  const [slotTick, setSlotTick] = useState(0);
+  useEffect(() => {
+    if (slotItems.length < 2) return;
+    const id = setInterval(() => setSlotTick((t) => t + 1), slotPeriodMs);
+    return () => clearInterval(id);
+  }, [slotItems.length, slotPeriodMs]);
   const slotCurrent = alertBubble === null && panel === null && !interactOverlay && slotItems.length > 0
     ? slotItems[slotTick % slotItems.length]
     : null;
   // Satu slot = satu offset pill (26px) bila ada isi.
   const aboveOffset = slotCurrent ? 26 : 0;
-  const petScale = settings.petScale ?? 1;
+  // Multi-pet B: skala/spesies/palette milik companion window ini (fallback settings lama).
+  const petScale = me?.scale ?? settings.petScale ?? 1;
   const effectiveScale = resolveEffectiveScale(petScale, alertEnlarged);
   const reserveAlert = alertBubble !== null;
   // Reserve lebar mengikuti KETERSEDIAAN (stabil, anti-flicker saat rotasi),
   // bukan isi yang sedang tampil.
-  const reserveMini = !reserveAlert && settings.prayerEnabled && settings.prayerMiniEnabled !== false && prayerDay !== null && panel === null;
-  const reserveTemp = !reserveAlert && settings.weatherEnabled !== false && settings.tempBubbleEnabled !== false && weather !== null && panel === null;
+  const reserveMini = !reserveAlert && !!showMiniPill && panel === null;
+  const reserveTemp = !reserveAlert && !!showTempPill && panel === null;
   const reserveTimer = timerLeft !== null && settings.timerBadgeEnabled !== false;
   useEffect(() => {
     let cancelled = false;
@@ -302,10 +405,13 @@ export default function App() {
       } catch { /* web preview uses CSS */ }
     })();
     return () => { cancelled = true; };
-  }, [panel, menu, effectiveScale, reserveAlert, reserveMini, reserveTemp, reserveTimer, alertBubble, slotCurrent, greet !== null, petting, microEmote !== null]);
+  }, [panel, menu, effectiveScale, reserveAlert, reserveMini, reserveTemp, reserveTimer, alertBubble, slotCurrent, greet !== null, petting]);
 
   // Scheduler tick (PRD §5.2: DB = source of truth, no duplicate, missed handling)
+  // Multi-pet B: HANYA primary yang menjalankan scheduler (anti-duplikat antar
+  // window); alert diteruskan ke presenter sesuai role companion.
   useEffect(() => {
+    if (!isPrimary) return;
     const tick = () => {
       // Tamagotchi-lite: luruhkan stat max 1x/menit; peringatkan hanya saat
       // BARU melewati ambang (anti-spam).
@@ -322,28 +428,20 @@ export default function App() {
         const prevNeeds = needsCare(prev);
         for (const n of needsCare(cur)) {
           if (prevNeeds.includes(n)) continue;
-          if (n === "hungry") { toast("Laper nih…", "Klik kanan → Kasih makan.", "info"); showEmote("🍗"); }
-          else if (n === "lonely") { toast("Mager nih…", "Klik kanan → Ajak main.", "info"); showEmote("🎾"); }
+          if (n === "hungry") { toast("Laper nih…", "Klik kanan → Kasih makan.", "info"); }
+          else if (n === "lonely") { toast("Mager nih…", "Klik kanan → Ajak main.", "info"); }
           else { toast("Ngantuk…", "Pet tidur dulu ya.", "info"); void requestState("sleep"); }
         }
       }
       const fired = schedulerTick({ settings, onFired: () => {} });
       for (const r of fired) {
-        void requestState("reminder");
-        setAlertEnlarged(true); // karakter membesar sampai dikonfirmasi
-        // Sama seperti sholat: bubble besar di ATAS pet (tidak menutupi kucing)
-        // + membesar 200% + mengecil saat dikonfirmasi (klik pet/bubble/toast/Esc).
-        setAlertBubble({ title: r.title, body: "Pengingat jatuh tempo — klik untuk konfirmasi.", icon: "bell" });
-        maybeCenterPetRef.current();
+        // Dirutekan ke presenter role "reminder" (bisa window lain); lokal bila
+        // presenternya window ini. Bubble/enlarge/toast diurus presentLocalAlert.
+        routeOrPresent("reminder", r.title, "Pengingat jatuh tempo — klik untuk konfirmasi.", "bell");
         const autoSpeak = store.automations.all().find((a) => a.id === "auto_speak")?.enabled ?? true;
-        toast(r.title, "Pengingat jatuh tempo", "reminder");
         if (autoSpeak && !settings.speechMuted) speak(`Pengingat: ${r.title}`, { muted: settings.speechMuted });
         else if (!settings.soundMuted) { try { new AudioContext().close(); } catch { /* no beep impl */ } }
         bump();
-        setTimeout(() => {
-          setAlertBubble((b) => (b?.title === r.title ? null : b));
-          setAlertEnlarged(false);
-        }, 60_000);
       }
       // Weekday morning summary (08:59–09:01 window, once/day)
       const now = new Date();
@@ -352,16 +450,8 @@ export default function App() {
         const today = now.toDateString();
         if (auto?.enabled && auto.lastRunAt && new Date(auto.lastRunAt).toDateString() !== today) {
           const dueToday = store.todos.all().filter((t) => t.status !== "completed").length;
-          // Sama seperti pengingat lain: bubble di atas pet + membesar + konfirmasi.
-          setAlertBubble({ title: "Ringkasan pagi", body: `${dueToday} tugas terbuka — klik untuk konfirmasi.`, icon: "sun" });
-          setAlertEnlarged(true);
-          maybeCenterPetRef.current();
-          void requestState("reminder");
-          toast("Ringkasan pagi", `${dueToday} tugas terbuka. Dobel-klik pet, lalu buka tab Tugas.`, "reminder");
-          setTimeout(() => {
-            setAlertBubble((b) => (b?.title === "Ringkasan pagi" ? null : b));
-            setAlertEnlarged(false);
-          }, 60_000);
+          // Sama seperti pengingat lain: dirutekan ke presenter role "reminder".
+          routeOrPresent("reminder", "Ringkasan pagi", `${dueToday} tugas terbuka — klik untuk konfirmasi.`, "sun");
           auto.lastRunAt = now.toISOString();
           store.automations.save(store.automations.all().map((a) => (a.id === auto.id ? auto : a)));
         }
@@ -371,10 +461,13 @@ export default function App() {
     tick();
     const id = setInterval(tick, 5000);
     return () => clearInterval(id);
-  }, [settings, bump, requestState]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, bump, requestState, isPrimary, routeOrPresent]);
 
   // Prayer ticker: cache-sync + alert masuk waktu & H-X menit (bubble di atas pet + adzan).
   // Local-first: pakai cache dulu, network best-effort 1x per kota per hari.
+  // Multi-pet B: SEMUA window melukis countdown dari cache shared (pill per-pet);
+  // hanya primary yang fetch network + routing alert (anti-duplikat).
   useEffect(() => {
     if (!settings.prayerEnabled) return;
     const cityId = settings.prayerCityId ?? "1301";
@@ -397,7 +490,8 @@ export default function App() {
         }
       }
       // 1) Refresh network hanya bila belum ada data segar (jadwal statis
-      //    per hari — tidak perlu fetch tiap 15 dtk).
+      //    per hari — tidak perlu fetch tiap 15 dtk). HANYA primary.
+      if (!isPrimary) return;
       if (!day || day.date !== ymd) {
         const live = await getPrayerDay(cityId, cityName, now);
         if (cancelled) return;
@@ -426,13 +520,13 @@ export default function App() {
         if (diff >= 0 && diff <= 90_000 && !wasFired(key)) {
           markFired(key);
           const quiet = settings.quietHoursEnabled && isQuietHours(now, settings.quietStart, settings.quietEnd);
+          // Multi-pet B: alert sholat dirutekan ke presenter role "prayer".
+          // Bubble besar hanya bila presenternya window ini (diurus routeOrPresent).
           if (settings.prayerBubbleEnabled !== false) {
-            setAlertBubble({ title: `Masuk waktu ${name} · ${timeOf(day, name)}`, body: "Yuk sholat dulu — klik untuk konfirmasi.", icon: "moonStar" });
+            routeOrPresent("prayer", `Masuk waktu ${name} · ${timeOf(day, name)}`, "Yuk sholat dulu — klik untuk konfirmasi.", "moonStar");
+          } else {
+            toast(`${name} ${timeOf(day, name)}`, `${cityName} · saatnya sholat`, "reminder");
           }
-          setAlertEnlarged(true);
-          maybeCenterPetRef.current();
-          void requestState("reminder");
-          toast(`${name} ${timeOf(day, name)}`, `${cityName} · saatnya sholat`, "reminder");
           if (settings.prayerAdzanEnabled && !quiet) {
             if (!settings.soundMuted) playAdzanBeep(3);
             if (!settings.speechMuted) speak(`Sudah masuk waktu sholat ${name}.`, { muted: false });
@@ -480,7 +574,7 @@ export default function App() {
     const slow = setInterval(() => void check(), 15_000);
     return () => { cancelled = true; clearInterval(fast); clearInterval(slow); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.prayerEnabled, settings.prayerCityId, settings.prayerCityName, settings.prayerAdzanEnabled, settings.prayerBubbleEnabled, settings.prayerReminderMins, settings.quietHoursEnabled, settings.quietStart, settings.quietEnd, settings.soundMuted, settings.speechMuted]);
+  }, [settings.prayerEnabled, isPrimary, routeOrPresent, settings.prayerCityId, settings.prayerCityName, settings.prayerAdzanEnabled, settings.prayerBubbleEnabled, settings.prayerReminderMins, settings.quietHoursEnabled, settings.quietStart, settings.quietEnd, settings.soundMuted, settings.speechMuted]);
   // Timer countdown
   const timerEnd = useRef<number | null>(null);
   const timerStart = useCallback((secs: number, label = "Fokus") => {
@@ -543,6 +637,11 @@ export default function App() {
     setPetting(false);
   };
 
+  // Spesies window ini (multi-pet B) untuk sapaan; fallback settings lama.
+  const mySpecies = () =>
+    companionsRef.current.find((c) => c.id === ownIdRef.current)?.species
+    ?? settingsRef.current.petSpecies ?? "cat";
+
   const endDrag = useCallback((wasDragging: boolean) => {
     // Klik pet = konfirmasi pesan penting (kecilkan kembali). Ini yang paling
     // intuitif: user mengklik karakter/toast/bubble/Esc, semuanya mengecilkan.
@@ -550,7 +649,7 @@ export default function App() {
     if (wasDragging) void requestState("idle");
     else {
       void requestState("react"); // plain click = happy react
-      showGreet(randomGreeting(settingsRef.current.petSpecies ?? "cat", greetCtx()));
+      showGreet(randomGreeting(mySpecies(), greetCtx()));
     }
   }, [requestState, alertEnlarged, confirmAlert, showGreet]);
   const onPetMouseDown = useCallback((e: React.MouseEvent) => {
@@ -596,7 +695,7 @@ export default function App() {
     for (const h of newlyUnlocked(prev, next)) {
       toast(`Topi baru terbuka: ${h.emoji} ${h.name}`, "Lihat di Pengaturan → Topi.", "success");
     }
-    showGreet(randomGreeting(settingsRef.current.petSpecies ?? "cat", { happy: true }));
+    showGreet(randomGreeting(mySpecies(), { happy: true }));
     void requestState("idle");
   }, [requestState, showGreet]);
   const onPetMouseUp = useCallback(() => {
@@ -649,7 +748,7 @@ export default function App() {
     setPanel(t);
   }, []);
 
-  // Rawat pet (menu klik kanan / panel Pengaturan): stat + emote + suara + aksi.
+  // Rawat pet (menu klik kanan / panel Pengaturan): stat + suara + aksi.
   const onCare = useCallback((kind: "feed" | "play") => {
     const cur = settingsRef.current.petStats ?? { hunger: 100, mood: 100, energy: 100, updatedAt: new Date(0).toISOString() };
     const stats = kind === "feed" ? feedStats(cur) : playStats(cur);
@@ -657,17 +756,15 @@ export default function App() {
     saveSettings(updated);
     setSettings(updated);
     if (kind === "feed") {
-      showEmote("🍗");
       playPetSound(settingsRef.current.soundMuted);
       toast("Nyam nyam!", "Kenyang 100%.", "success");
       void requestState("react");
     } else {
-      showEmote("🎾");
       playPetSound(settingsRef.current.soundMuted);
       toast("Asik main!", "Mood 100%.", "success");
       void requestState("jump");
     }
-  }, [requestState, showEmote]);
+  }, [requestState]);
 
   const onMenuPick = useCallback(async (a: MenuAction) => {
     setMenu(null);
@@ -768,6 +865,7 @@ export default function App() {
     reducedMotion: settings.reducedMotion,
     paused: wanderPaused,
     requestState,
+    startDelayMs: phaseDelayMsFor(ownId),
   });
 
   // Alert penting -> pet kembali ke tengah layar agar jadi fokus.
@@ -797,12 +895,6 @@ export default function App() {
           break;
         case "react":
           void requestState("react");
-          break;
-        case "emote":
-          if (ev.emote) {
-            setMicroEmote(ev.emote);
-            setTimeout(() => setMicroEmote(null), 2400);
-          }
           break;
         case "stretch":
         case "yawn":
@@ -873,7 +965,9 @@ export default function App() {
       // has-bubble = ada konten di atas pet (pill/alert/overlay): jangkar ke
       // bawah agar overlay absolute tidak kepotong tepi atas. Tanpa ini saat
       // sapaan tampil sendirian layout center -> kepotong ~7px.
-      className={`dp-root${panel ? " with-panel" : ""}${(alertBubble || miniNext || tempBubble || interactOverlay || microEmote) && !panel ? " has-bubble" : ""}${reserveTimer && !panel ? " has-status" : ""}`}
+      className={`dp-root${panel ? " with-panel" : ""}${(alertBubble || miniNext || tempBubble || interactOverlay) && !panel ? " has-bubble" : ""}${reserveTimer && !panel ? " has-status" : ""}`}
+      data-companion={ownId}
+      data-companion-name={me?.name ?? ""}
       onContextMenu={onCtxMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -930,28 +1024,16 @@ export default function App() {
           state={petState}
           reducedMotion={settings.reducedMotion}
           characterId={settings.characterId}
-          species={settings.petSpecies}
-          paletteId={settings.petPaletteId}
-          customColor={settings.petCustomColor}
+          species={me?.species ?? settings.petSpecies}
+          paletteId={me?.paletteId ?? settings.petPaletteId}
+          customColor={me?.customColor ?? settings.petCustomColor}
           hat={validActiveHat(settings.activeHat, settings.pettingTotal ?? 0)}
           speed={walkSpeed}
           onTap={() => {}}
         />
       </div>
       {/* Overlay teks: hanya saat tidak ada alert (alert punya bubble sendiri).
-          Di layer stack TANPA flip agar tidak ikut kecermin (scaleX -1 di wrap).
-          Hanya SATU overlay dalam satu waktu (prioritas: dielus > sapaan >
-          emote) agar tidak menumpuk di titik yang sama di atas kepala. */}
-      {!alertBubble && !petting && !greet && microEmote && (
-        <span key={microEmote + Date.now()} className="dp-micro-emote" aria-hidden="true">
-          {microEmote}
-        </span>
-      )}
-      {!alertBubble && petting && (
-        <span className="dp-hearts" data-testid="pet-hearts" aria-hidden="true">
-          <span>💕</span><span>💗</span><span>💖</span>
-        </span>
-      )}
+          Di layer stack TANPA flip agar tidak ikut kecermin (scaleX -1 di wrap). */}
       {!alertBubble && !petting && greet && (
         <span key={greet.key} className="dp-greet" data-testid="pet-greet" aria-hidden="true">
           {greet.text}
@@ -982,7 +1064,8 @@ export default function App() {
       {panel && (
         <MainPanel tab={panel} setTab={setPanel} onClose={() => setPanel(null)}
           settings={settings} setSettings={setSettings}
-          refreshKey={refreshKey} bump={bump} timerStart={timerStart} timerLeft={timerLeft} onCare={onCare} />
+          refreshKey={refreshKey} bump={bump} timerStart={timerStart} timerLeft={timerLeft} onCare={onCare}
+          companions={companions} setCompanions={(c) => { saveCompanions(c); setCompanions(c); }} />
       )}
 
       <div className="dp-toasts" aria-live="polite">

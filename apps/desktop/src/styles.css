@@ -169,27 +169,6 @@ html, body, #root {
              dp-sprite-steps 0.8s steps(4) infinite !important;
 }
 
-/* ── Micro-emote bubble (emoji kecil mengambang di atas kepala) ─────────────── */
-.dp-micro-emote {
-  position: absolute; /* dijangkarkan ke stack (box visual pet) */
-  bottom: calc(100% + 18px + var(--above, 0px));
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 20px;
-  line-height: 1;
-  pointer-events: none;
-  z-index: 25;
-  animation: dp-emote-float 2.2s ease-out forwards;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.18));
-}
-@keyframes dp-emote-float {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.6); }
-  15%  { opacity: 1; transform: translateX(-50%) translateY(0)   scale(1.15); }
-  35%  { opacity: 1; transform: translateX(-50%) translateY(-4px) scale(1); }
-  70%  { opacity: 1; transform: translateX(-50%) translateY(-8px) scale(1); }
-  100% { opacity: 0; transform: translateX(-50%) translateY(-18px) scale(0.85); }
-}
-
 /* Subtle energetic forward tilt during fast dash/sprint */
 .dp-pet.dp-speed--fast .dp-sprite-view {
   transform: skewX(-3deg) scaleY(1.02);
@@ -255,9 +234,8 @@ html, body, #root {
 .dp-root.with-panel { justify-content: flex-start; padding-top: 8px; }
 /* Bubble/overlay menempel tepat di atas pet: konten dijangkarkan ke bawah
    jendela (tanpa ini bubble+pet di tengah vertikal sehingga ada space kosong
-   di atas). Berlaku juga saat overlay tampil sendirian (sapaan/hati/emote
-   tanpa pill): overlay itu absolute, kalau layout center dia kepotong tepi
-   atas ~7px. */
+   di atas). Berlaku juga saat sapaan tampil sendirian tanpa pill: sapaan itu
+   absolute, kalau layout center dia kepotong tepi atas ~7px. */
 .dp-root.has-bubble:not(.with-panel) { justify-content: flex-end; padding-bottom: 10px; }
 /* Badge timer di bawah pet juga dijangkarkan ke bawah: kalau window kurang
    tinggi sesaat (mis. di tengah transisi ukuran), yang kepotong sisa napas
@@ -445,12 +423,7 @@ html, body, #root {
 /* Sapaan teks di atas kepala (di atas pill bila ada, via --above di stack) */
 .dp-greet { position: absolute; bottom: calc(100% + 6px + var(--above, 0px)); left: 50%; transform: translateX(-50%); white-space: nowrap; max-width: 240px; overflow: hidden; text-overflow: ellipsis; background: #fff; border: 1px solid rgba(34,34,58,0.12); border-radius: 999px; padding: 2px 10px; font-size: 11px; font-weight: 700; color: var(--dp-text); box-shadow: 0 4px 12px rgba(34,34,58,0.15); pointer-events: none; z-index: 26; animation: dp-pop 180ms ease; }
 
-/* Hati saat dielus */
-.dp-hearts { position: absolute; bottom: calc(100% + 2px + var(--above, 0px)); left: 50%; transform: translateX(-50%); pointer-events: none; z-index: 26; font-size: 18px; line-height: 1; display: flex; gap: 2px; }
-.dp-hearts span { display: inline-block; animation: dp-heart-float 900ms ease-out infinite; }
-.dp-hearts span:nth-child(2) { animation-delay: 150ms; }
-.dp-hearts span:nth-child(3) { animation-delay: 300ms; }
-@keyframes dp-heart-float { 0% { transform: translateY(6px) scale(0.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-14px) scale(1.1); opacity: 0; } }
+/* Elus: badan bergoyang senang */
 .dp-petting .dp-pet { animation: dp-pet-happy 600ms ease-in-out infinite; }
 @keyframes dp-pet-happy { 0%,100% { transform: scale(1) rotate(0deg); } 25% { transform: scale(1.06) rotate(-2deg); } 75% { transform: scale(1.06) rotate(2deg); } }
 

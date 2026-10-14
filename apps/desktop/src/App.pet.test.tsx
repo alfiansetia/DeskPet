@@ -1,4 +1,4 @@
-/** Regression: overlay teks (sapaan/hati/emote) TIDAK ikut kecermin saat pet
+/** Regression: overlay teks (sapaan) TIDAK ikut kecermin saat pet
  * menghadap kiri — mereka duduk di layer stack, di luar wrap yang di-flip.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";

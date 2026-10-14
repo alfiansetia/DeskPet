@@ -15,6 +15,8 @@ interface Opts {
   reducedMotion: boolean;
   paused: boolean; // menu/panel open, dragging, sleeping
   requestState: (s: PetState) => void;
+  /** Delay awal (ms) agar N pet tidak start bareng. Default 0. */
+  startDelayMs?: number;
 }
 
 interface MoveLeg {
@@ -180,6 +182,7 @@ export function useWander({
   reducedMotion,
   paused,
   requestState,
+  startDelayMs = 0,
 }: Opts) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -219,7 +222,9 @@ export function useWander({
     const schedule = (immediate = false) => {
       if (cancelled) return;
       // Saat awal atau baru ganti settingan, langsung jalan dalam 700ms agar instan terasa!
-      const delay = immediate ? 250 : isFirst ? 700 : rand(3000, 6000);
+      // startDelayMs (multi-pet) hanya menunda start PERTAMA agar tidak sinkron.
+      const base = immediate ? 250 : isFirst ? 700 : rand(3000, 6000);
+      const delay = isFirst ? base + Math.max(0, startDelayMs) : base;
       isFirst = false;
       idleTimer = setTimeout(() => { void executeWander(); }, delay);
     };
@@ -559,7 +564,7 @@ export function useWander({
       try { reqRef.current("idle"); } catch { /* noop */ }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, wanderPace, wanderDirection, reducedMotion, paused, blocked]);
+  }, [enabled, wanderPace, wanderDirection, reducedMotion, paused, blocked, startDelayMs]);
 
   // Kembalikan pet ke tengah layar saat alert penting agar jadi fokus.
   // Tauri: pindahkan window OS ke tengah monitor aktif. Web preview:

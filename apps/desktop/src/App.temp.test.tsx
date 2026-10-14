@@ -29,10 +29,17 @@ function seedPrayerAndWeather() {
   }));
 }
 
+/** Seed +25 mnt tidak valid bila nyebrang tengah malam (hhmm tanpa tanggal jadi
+ *  terbaca sudah lewat). Lewati skenario future-prayer di ~30 mnt sebelum
+ *  tengah malam. */
+function futurePrayerPossible(): boolean {
+  return toYMD(new Date(Date.now() + 30 * 60_000)) === toYMD(new Date());
+}
+
 describe("App temp bubble stacking", () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 
-  it("suhu dan countdown sholat bergantian tiap 4 detik (satu slot)", async () => {
+  it.runIf(futurePrayerPossible())("suhu dan countdown sholat bergantian tiap 4 detik (satu slot)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     seedPrayerAndWeather();
     render(<App />);
@@ -53,7 +60,7 @@ describe("App temp bubble stacking", () => {
     }, { timeout: 8000 });
   }, 15000);
 
-  it("toggle mati menyembunyikan bubble suhu saja", async () => {
+  it.runIf(futurePrayerPossible())("toggle mati menyembunyikan bubble suhu saja", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     seedPrayerAndWeather();
     localStorage.setItem("deskpet:settings", JSON.stringify({ tempBubbleEnabled: false }));

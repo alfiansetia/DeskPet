@@ -11,10 +11,17 @@ function hhmm(d: Date): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/** Seed +25/+85 mnt tidak valid bila nyebrang tengah malam (format hhmm tanpa
+ *  tanggal jadi terbaca sudah lewat). Lewati skenario future-prayer di ~30 mnt
+ *  sebelum tengah malam; di luar itu selalu valid. */
+function futurePrayerPossible(): boolean {
+  return toYMD(new Date(Date.now() + 30 * 60_000)) === toYMD(new Date());
+}
+
 describe("App prayer pill", () => {
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 
-  it("pill countdown tampil saat belum masuk window pengingat H-X", async () => {
+  it.runIf(futurePrayerPossible())("pill countdown tampil saat belum masuk window pengingat H-X", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     const now = new Date();
     // Maghrib 25 mnt lagi: di luar window H-10 mnt (tidak memicu alert),
@@ -38,7 +45,7 @@ describe("App prayer pill", () => {
     });
   });
 
-  it("boot tanpa cache + online -> network sekali + audit prayer.fetch sekali", async () => {
+  it.runIf(futurePrayerPossible())("boot tanpa cache + online -> network sekali + audit prayer.fetch sekali", async () => {
     const ymd = toYMD(new Date());
     const now = new Date();
     const in25 = new Date(now.getTime() + 25 * 60_000);

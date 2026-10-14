@@ -4,11 +4,13 @@
 
 pub mod actions;
 pub mod commands;
+pub mod companions;
 pub mod db;
 pub mod pet;
 pub mod settings;
 
 use commands::{CurrentPetState, PetVisibility, SharedSettings};
+use companions::PetRegistry;
 use pet::PetState;
 use settings::AppSettings;
 use std::sync::Mutex;
@@ -70,8 +72,11 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 }
 
 fn set_pet_visible(app: &tauri::AppHandle, visible: bool) {
-    if let Some(w) = app.get_webview_window("pet") {
-        let _ = if visible { w.show() } else { w.hide() };
+    // Multi-pet (opsi B): tray Show/Hide berlaku ke SEMUA window `pet*`.
+    for (label, w) in app.webview_windows() {
+        if (label == "pet" || label.starts_with("pet-")) {
+            let _ = if visible { w.show() } else { w.hide() };
+        }
     }
     if let Some(v) = app.try_state::<PetVisibility>() {
         *v.0.lock().unwrap() = visible;
@@ -101,10 +106,17 @@ pub fn run() {
         ))
         .manage(PetVisibility(Mutex::new(true)))
         .manage(CurrentPetState(Mutex::new(PetState::Idle)))
+        .manage(PetRegistry::default())
         .manage(SharedSettings(Mutex::new(AppSettings::default())))
         .invoke_handler(tauri::generate_handler![
             commands::pet_get_state,
             commands::pet_set_state,
+            commands::pet_get_state_of,
+            commands::pet_set_state_of,
+            commands::companions_list,
+            commands::companions_spawn,
+            commands::companions_despawn,
+            commands::companions_owner_of,
             commands::pet_is_visible,
             commands::pet_set_visible,
             commands::settings_get,
@@ -138,7 +150,7 @@ pub fn run() {
             // Dragging the pet must not leak clicks behind it (PRD §5.1):
             // frontend uses drag-region; Rust keeps window frameless.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "pet" {
+                if window.label() == "pet" || window.label().starts_with("pet-") {
                     // Hide instead of quit so tray can restore.
                     api.prevent_close();
                     let _ = window.hide();

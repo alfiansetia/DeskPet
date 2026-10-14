@@ -2,34 +2,71 @@
 //! Only safe window/pet/settings/action commands. No shell, no network, no secrets.
 
 use crate::actions::{ActionRequest, PermissionClass};
+use crate::companions::{
+    companion_id_from_label, is_valid_companion_id, window_label_for, PetRegistry,
+    MAIN_COMPANION_ID, MAX_COMPANIONS,
+};
 use crate::pet::PetState;
 use crate::settings::AppSettings;
 use std::str::FromStr;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct PetVisibility(pub Mutex<bool>);
 pub struct CurrentPetState(pub Mutex<PetState>);
 pub struct SharedSettings(pub Mutex<AppSettings>);
 
 #[tauri::command]
-pub fn pet_get_state(state: State<'_, CurrentPetState>) -> PetState {
-    *state.0.lock().unwrap()
+pub fn pet_get_state(state: State<'_, CurrentPetState>, registry: State<'_, PetRegistry>) -> PetState {
+    // Sumber kebenaran: registry ("main"). Mirror lama dipertahankan untuk kompat.
+    let s = registry.get(MAIN_COMPANION_ID);
+    if let Ok(mut g) = state.0.lock() {
+        *g = s;
+    }
+    s
 }
 
 #[tauri::command]
-pub fn pet_set_state(state: State<'_, CurrentPetState>, next: String) -> Result<PetState, String> {
-    let next_state = PetState::from_str(&next)?;
-    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-    if !guard.can_transition_to(next_state) {
-        return Err(format!(
-            "transition {} -> {} not allowed",
-            guard.as_str(),
-            next_state.as_str()
-        ));
+pub fn pet_set_state(
+    state: State<'_, CurrentPetState>,
+    registry: State<'_, PetRegistry>,
+    next: String,
+) -> Result<PetState, String> {
+    let applied = registry.set(MAIN_COMPANION_ID, PetState::from_str(&next)?)?;
+    if let Ok(mut g) = state.0.lock() {
+        *g = applied;
     }
-    *guard = next_state;
-    Ok(next_state)
+    Ok(applied)
+}
+
+/// State satu companion (multi-window opsi B). Fallback: id tak dikenal -> error
+/// agar frontend tidak diam-diam mengendalikan pet yang salah.
+#[tauri::command]
+pub fn pet_get_state_of(registry: State<'_, PetRegistry>, id: String) -> Result<PetState, String> {
+    if (!is_valid_companion_id(&id)) {
+        return Err("unknown companion id (rejected)".into());
+    }
+    Ok(registry.get(&id))
+}
+
+#[tauri::command]
+pub fn pet_set_state_of(
+    state: State<'_, CurrentPetState>,
+    registry: State<'_, PetRegistry>,
+    id: String,
+    next: String,
+) -> Result<PetState, String> {
+    if (!is_valid_companion_id(&id)) {
+        return Err("unknown companion id (rejected)".into());
+    }
+    let next_state = PetState::from_str(&next)?;
+    let applied = registry.set(&id, next_state)?;
+    if (id == MAIN_COMPANION_ID) {
+        if let Ok(mut g) = state.0.lock() {
+            *g = applied;
+        }
+    }
+    Ok(applied)
 }
 
 #[tauri::command]
@@ -114,6 +151,116 @@ pub fn audit_log(action_id: String, source: String, status: String, confirmation
 #[tauri::command]
 pub fn app_quit(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+/// Daftar companion window yang hidup (label `pet*` saja). Local-only.
+#[tauri::command]
+pub fn companions_list(
+    app: AppHandle,
+    registry: State<'_, PetRegistry>,
+) -> Vec<serde_json::Value> {
+    registry
+        .list()
+        .into_iter()
+        .map(|(id, st)| {
+            let label = window_label_for(&id);
+            let visible = app
+                .get_webview_window(&label)
+                .and_then(|w| w.is_visible().ok())
+                .unwrap_or(false);
+            serde_json::json!({ "id": id, "label": label, "state": st.as_str(), "visible": visible })
+        })
+        .collect()
+}
+
+/// Spawn (atau fokus bila sudah ada) window untuk satu companion.
+/// Local-only: tanpa network, tanpa shell. ID divalidasi ketat; "main" = window `pet`.
+#[tauri::command]
+pub fn companions_spawn(
+    app: AppHandle,
+    registry: State<'_, PetRegistry>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    if (!is_valid_companion_id(&id)) {
+        return Err("unknown companion id (rejected)".into());
+    }
+    if (id != MAIN_COMPANION_ID && registry.list().len() >= MAX_COMPANIONS) {
+        return Err("companion limit reached (max 5)".into());
+    }
+    registry.ensure(&id);
+    let label = window_label_for(&id);
+    if let Some(w) = app.get_webview_window(&label) {
+        let _ = w.show();
+        let _ = w.set_focus();
+        return Ok(serde_json::json!({ "id": id, "label": label, "existed": true }));
+    }
+    // Posisi cascade dari window primary agar tidak menumpuk persis.
+    let offset: i32 = 60 * (app.webview_windows().len() as i32);
+    let (base_x, base_y) = app
+        .get_webview_window("pet")
+        .and_then(|w| w.outer_position().ok())
+        .map(|p| (p.x, p.y))
+        .unwrap_or((200, 200));
+    let win = tauri::WebviewWindowBuilder::new(
+        &app,
+        &label,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title(format!("DeskPet {label}"))
+    .inner_size(170.0, 200.0)
+    .min_inner_size(80.0, 80.0)
+    .transparent(true)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(true)
+    .shadow(false)
+    .accept_first_mouse(true)
+    .position((base_x + offset).max(0) as f64, (base_y + offset).max(0) as f64)
+    .build()
+    .map_err(|e| e.to_string())?;
+    let _ = win.show();
+    let _ = app.emit("deskpet://companions-changed", "spawn");
+    Ok(serde_json::json!({ "id": id, "label": label, "existed": false }))
+}
+
+/// Tutup + hapus window companion sekunder. Primary ("main") ditolak.
+#[tauri::command]
+pub fn companions_despawn(
+    app: AppHandle,
+    registry: State<'_, PetRegistry>,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    if (!is_valid_companion_id(&id)) {
+        return Err("unknown companion id (rejected)".into());
+    }
+    if (id == MAIN_COMPANION_ID) {
+        return Err("cannot despawn primary pet".into());
+    }
+    let label = window_label_for(&id);
+    if let Some(w) = app.get_webview_window(&label) {
+        w.destroy().map_err(|e| e.to_string())?;
+    }
+    registry.remove(&id);
+    let _ = app.emit("deskpet://companions-changed", "despawn");
+    Ok(serde_json::json!({ "id": id, "label": label }))
+}
+
+/// Label window pemanggil -> companion id pemiliknya (untuk frontend multi-window).
+#[tauri::command]
+pub fn companions_owner_of(app: AppHandle) -> String {
+    // Dipanggil dari window itu sendiri; fallback "main" bila tak terpetakan.
+    // `app` di sini adalah handle proses — window spesifik tidak tersedia di
+    // command bebas; frontend memakai label lokalnya sendiri. API ini hanya
+    // echo daftar label agar web-preview tetap bisa jalan.
+    let mut labels: Vec<String> = app.webview_windows().keys().cloned().collect();
+    labels.sort();
+    let first = labels
+        .iter()
+        .find(|l| l.as_str() == "pet" || l.starts_with("pet-"))
+        .cloned()
+        .unwrap_or_else(|| "pet".to_string());
+    companion_id_from_label(&first)
 }
 
 /// Durable mirror of the FRONTEND settings object (opaque JSON blob).

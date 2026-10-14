@@ -127,7 +127,7 @@ export function measurePetContentHeight(effectiveScale: number): number {
     const petH = stackH > 0
       ? stackH
       : petR && petR.height > 0 ? petR.height : PET_SPRITE_PX * effectiveScale;
-    // Overlay (sapaan/hati/emote) dijangkarkan ke stack pet — dukung selektor
+    // Overlay (sapaan) dijangkarkan ke stack pet — dukung selektor
     // lama (class) maupun baru (testid) agar tidak pernah 0 diam-diam.
     const hOfStack = (cls: string): number => Math.max(
       hOf(`.dp-pet-stack > ${cls}`),
@@ -144,22 +144,13 @@ export function measurePetContentHeight(effectiveScale: number): number {
     if (speechH > 0) total += speechH;
     if (tempH > 0) total += tempH + 2;
     if (miniH > 0) total += miniH + 2;
-    // Overlay mengambang (sapaan/hati/emote): absolute di atas stack, di atas
-    // pill (--above). Ambil yang tertinggi agar tak kepotong window.
-    // Hanya SATU overlay yang dirender dalam satu waktu (prioritas di App:
-    // hearts > greet > emote), jadi max() di sini setara tingginya.
-    // Basis mencakup travel animasi: hearts melayang naik 14px
-    // (dp-heart-float), emote naik 18px (dp-emote-float, terlihat penuh
-    // sampai -8px) — tanpa ini puncak animasi kepotong tepi atas.
+    // Overlay mengambang (sapaan teks): absolute di atas stack, di atas
+    // pill (--above).
     const ov = (cls: string, base: number): number => {
       const h = hOfStack(cls);
       return h > 0 ? h + base : 0;
     };
-    total += Math.max(
-      ov(".dp-greet", 6),
-      ov(".dp-hearts", 8),
-      ov(".dp-micro-emote", 26),
-    );
+    total += ov(".dp-greet", 6);
     total += Math.ceil(petH);
     if (statusH > 0) total += 6 + statusH;
     total += anchoredBottom ? 10 : 8; // padding-bottom root

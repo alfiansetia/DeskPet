@@ -8,7 +8,6 @@
  *  - "stretch" : CSS-only — animasi dp-stretch (meregangkan badan di tempat)
  *  - "yawn"    : CSS-only — animasi dp-yawn (menguap sambil berkedip)
  *  - "wiggle"  : CSS-only — animasi dp-wiggle (menggoyang-goyangkan badan)
- *  - "emote"   : tampilkan emoji bubble kecil sesaat (💤 ♪ ✨ dst.)
  *  - "nothing" : tidak melakukan apa-apa (istirahat biasa)
  *
  * Aksi "state" (jump/speak/react) memanggil requestState dan akan auto-kembali
@@ -26,13 +25,10 @@ export type IdleCssAnim = "stretch" | "yawn" | "wiggle";
 export type IdleActionKind =
   | "jump" | "speak" | "react"  // → ubah PetState
   | IdleCssAnim                  // → tambah CSS class
-  | "emote"                      // → tampilkan emoji bubble
   | "nothing";                   // → diam saja
 
 export interface IdleMicroEvent {
   kind: IdleActionKind;
-  /** Emoji/teks untuk bubble micro (hanya untuk kind="emote"). */
-  emote?: string;
 }
 
 interface Opts {
@@ -45,19 +41,16 @@ interface Opts {
 }
 
 // ─── Tabel aksi + bobot (total 100) ──────────────────────────────────────────
-type ActionEntry = { kind: IdleActionKind; weight: number; emote?: string };
+type ActionEntry = { kind: IdleActionKind; weight: number };
 const ACTIONS: ActionEntry[] = [
-  { kind: "jump",    weight: 18 },
-  { kind: "speak",   weight: 10 },
-  { kind: "react",   weight: 10 },
-  { kind: "stretch", weight: 14 },
-  { kind: "yawn",    weight: 12 },
-  { kind: "wiggle",  weight: 10 },
-  { kind: "emote",   weight: 16 },
-  { kind: "nothing", weight: 10 },
+  { kind: "jump",    weight: 20 },
+  { kind: "speak",   weight: 12 },
+  { kind: "react",   weight: 12 },
+  { kind: "stretch", weight: 16 },
+  { kind: "yawn",    weight: 14 },
+  { kind: "wiggle",  weight: 12 },
+  { kind: "nothing", weight: 14 },
 ];
-
-const RANDOM_EMOTES = ["💤", "💭", "♪", "✨", "😺", "🐾", "💕", "❓", "😴", "🌟", "😸", "🎶"];
 
 function pickAction(): IdleMicroEvent {
   const total = ACTIONS.reduce((s, a) => s + a.weight, 0);
@@ -65,10 +58,6 @@ function pickAction(): IdleMicroEvent {
   for (const a of ACTIONS) {
     r -= a.weight;
     if (r <= 0) {
-      if (a.kind === "emote") {
-        const emote = RANDOM_EMOTES[Math.floor(Math.random() * RANDOM_EMOTES.length)];
-        return { kind: "emote", emote };
-      }
       return { kind: a.kind };
     }
   }
