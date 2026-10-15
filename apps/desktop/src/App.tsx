@@ -41,6 +41,7 @@ import { petWindowLogicalSize, measurePetContentHeight, measurePetContentWidth, 
 import { Bubble, SLOT_ROTATE_MS } from "./components/Bubble";
 import { ensureAutostart } from "./features/startup/autostart";
 import { keepWindowOnScreen } from "./lib/windowFit";
+import { useWindowHover } from "./lib/useWindowHover";
 
 /**
  * DeskPet shell: pet interaktif (drag kiri, klik = react, klik kanan = menu,
@@ -66,7 +67,9 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [timerLeft, setTimerLeft] = useState<number | null>(null);
   const [timerLabel, setTimerLabel] = useState("Fokus");
-  const [hovered, setHovered] = useState(false);
+  // Hover kursor di dalam window (pause jalan, menoleh, mode pemalu).
+  // Via hook useWindowHover (mouseover/mousemove + mouseout/document-leave).
+  const hovered = useWindowHover();
   const [prayerDay, setPrayerDay] = useState<PrayerDay | null>(null);
   const [alertBubble, setAlertBubble] = useState<{ title: string; body: string; icon: IconName } | null>(null);
   const [prayerTick, setPrayerTick] = useState(0); // re-render countdown tiap detik
@@ -1014,25 +1017,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [visible, menu, panel, setVisibleBoth, alertEnlarged, confirmAlert]);
 
-  // Stop pet in its tracks when cursor focuses/hovers on the pet window
-  useEffect(() => {
-    const onEnter = () => setHovered(true);
-    const onLeave = (e: MouseEvent) => {
-      if (!e.relatedTarget) setHovered(false);
-    };
-    const onBlur = () => setHovered(false);
-    window.addEventListener("mouseenter", onEnter);
-    window.addEventListener("mouseleave", onLeave);
-    window.addEventListener("mouseover", onEnter);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("mouseenter", onEnter);
-      window.removeEventListener("mouseleave", onLeave);
-      window.removeEventListener("mouseover", onEnter);
-      window.removeEventListener("blur", onBlur);
-    };
-  }, []);
-
   const alertActive = alertBubble !== null;
   const moodLow = (settings.petStats?.mood ?? 100) < 25; // mager: berhenti jalan
   const wanderPaused = menu !== null || panel !== null || petState === "dragged" || hovered || alertActive || moodLow;
@@ -1190,8 +1174,6 @@ export default function App() {
       data-companion={ownId}
       data-companion-name={me?.name ?? ""}
       onContextMenu={onCtxMenu}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       {/* Popup alert di atas karakter (sholat/alarm/pengingat).
           Klik pet / bubble / tombol Mengerti = konfirmasi -> pet kembali ke ukuran semula. */}
@@ -1225,11 +1207,9 @@ export default function App() {
         style={backend === "web-preview"
           ? { ...petWrapBox(effectiveScale), transform: `translate(${offset.x}px, ${offset.y}px) scale(${(faceHold ?? facing) * effectiveScale}, ${effectiveScale})` }
           : { ...petWrapBox(effectiveScale), transform: `scale(${(faceHold ?? facing) * effectiveScale}, ${effectiveScale})` }}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => { setHovered(false); setFaceHold(null); }}
+        onMouseLeave={() => { setFaceHold(null); }}
         onMouseDown={onPetMouseDown}
         onMouseMove={(e) => {
-          if (!hovered) setHovered(true);
           onPetMouseMove(e);
         }}
         onMouseUp={onPetMouseUp}
