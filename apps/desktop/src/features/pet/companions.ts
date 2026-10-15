@@ -40,6 +40,8 @@ export interface Companion {
   showTemp: boolean;
   /** Tampilkan pill mini countdown sholat di window pet ini (default true). */
   showMini: boolean;
+  /** Pemalu: menjauh saat kursor hover (default false). Diatur per karakter. */
+  shy: boolean;
   createdAt: string;
 }
 
@@ -100,6 +102,7 @@ export function normalizeCompanion(raw: unknown, fallbackId = MAIN_COMPANION_ID)
     role: isCompanionRole(r.role) ? r.role : "all",
     showTemp: typeof r.showTemp === "boolean" ? r.showTemp : true,
     showMini: typeof r.showMini === "boolean" ? r.showMini : true,
+    shy: r.shy === true,
     createdAt: typeof r.createdAt === "string" && !Number.isNaN(Date.parse(r.createdAt))
       ? r.createdAt
       : new Date().toISOString(),

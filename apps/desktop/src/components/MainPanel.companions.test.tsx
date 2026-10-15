@@ -1,5 +1,5 @@
 /** Multi-pet B: kelola companion dari tab Kawan (tambah/role/hapus). */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, afterEach } from "vitest";
 import { MainPanel } from "./MainPanel";
 import { loadCompanions, loadSettings, store } from "../lib/store";
@@ -41,15 +41,51 @@ describe("MainPanel companions (multi-pet B)", () => {
     expect(loadCompanions()[1].role).toBe("prayer");
   });
 
-  it("toggle pill suhu/mini tersimpan per-companion", async () => {
+  it("toggle pill suhu/mini via Pengaturan window pet itu", () => {
+    render(
+      <MainPanel tab="settings" setTab={() => {}} onClose={() => {}}
+        settings={loadSettings()} setSettings={() => {}}
+        refreshKey={0} bump={() => {}} timerStart={() => {}} timerLeft={null} />
+    );
+    const box = screen.getByTitle("Tampilkan pill suhu di pet ini").querySelector("input")!;
+    fireEvent.click(box);
+    expect(loadCompanions()[0].showTemp).toBe(false);
+    const mini = screen.getByTitle("Tampilkan pill countdown sholat di pet ini").querySelector("input")!;
+    fireEvent.click(mini);
+    expect(loadCompanions()[0].showMini).toBe(false);
+  });
+
+  it("toggle pemalu via Pengaturan window pet itu (cermin tab Kawan)", () => {
+    render(
+      <MainPanel tab="settings" setTab={() => {}} onClose={() => {}}
+        settings={loadSettings()} setSettings={() => {}}
+        refreshKey={0} bump={() => {}} timerStart={() => {}} timerLeft={null} />
+    );
+    const box = screen.getByLabelText(/kabur saat di-hover/);
+    fireEvent.click(box);
+    expect(loadCompanions()[0].shy).toBe(true);
+  });
+  it("tombol Jinakkan semua mematikan pemalu semua karakter", () => {
     renderCompanions();
-    fireEvent.click(screen.getByTitle("Tambah karakter (window baru)"));
-    await waitFor(() => expect(loadCompanions()).toHaveLength(2));
-    const boxes = screen.getAllByTitle("Tampilkan pill suhu di pet ini");
-    fireEvent.click(boxes[1].querySelector("input")!);
-    expect(loadCompanions()[1].showTemp).toBe(false);
-    // companion pertama tidak ikut mati
-    expect(loadCompanions()[0].showTemp).toBe(true);
+    expect(screen.queryByRole("button", { name: /Jinakkan semua/ })).toBeNull(); // tak ada yang pemalu
+    const boxes = screen.getAllByLabelText("Pemalu");
+    fireEvent.click(boxes[0]);
+    expect(loadCompanions()[0].shy).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /Jinakkan semua/ }));
+    expect(loadCompanions().every((c) => c.shy !== true)).toBe(true);
+    expect(screen.queryByRole("button", { name: /Jinakkan semua/ })).toBeNull();
+  });
+  it("tab Kawan hanya manage: tanpa kontrol tampilan per kartu", () => {
+    renderCompanions();
+    // Spesies/warna/ukuran/pill per kartu diatur via dobel-klik pet → Pengaturan.
+    // (Form "tambah" di bawah tetap punya dropdown spesies/warna — itu bagian manage.)
+    const cards = screen.getByTestId("companions-list");
+    expect(within(cards).queryByLabelText(/Spesies /)).toBeNull();
+    expect(within(cards).queryByLabelText(/Warna /)).toBeNull();
+    expect(within(cards).queryByTitle("Tampilkan pill suhu di pet ini")).toBeNull();
+    // Yang tersisa per kartu: tugas (role). Tambah/hapus tetap ada.
+    expect(within(cards).getByLabelText(/Tugas /)).not.toBeNull();
+    expect(screen.getByTitle("Tambah karakter (window baru)")).not.toBeNull();
   });
 
   it("companion utama tidak bisa dihapus", () => {

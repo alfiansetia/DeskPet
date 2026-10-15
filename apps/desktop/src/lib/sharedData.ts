@@ -5,7 +5,7 @@
  *   adalah GLOBAL — satu sumber kebenaran, terlihat sama dari semua window.
  * - `createdBy` di item hanya info display ("dibuat dari window X"),
  *   TIDAK PERNAH dipakai sebagai filter kepemilikan / partisi data.
- * - Yang per-companion hanya: species/palette/scale/role/showTemp/showMini
+ * - Yang per-companion hanya: species/palette/scale/role/showTemp/showMini/shy
  *   + ephemeral animation state (Rust PetRegistry).
  * - Scheduler/notifikasi single-executor: hanya primary (`main`) yang fire;
  *   window lain hanya display + terima routing presenter via role.

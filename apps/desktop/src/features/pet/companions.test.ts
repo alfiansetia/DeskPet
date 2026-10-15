@@ -70,6 +70,13 @@ describe("companions model (multi-pet B)", () => {
     expect(off.showMini).toBe(false);
   });
 
+  it("shy defaults to off (opt-in per karakter)", () => {
+    expect(normalizeCompanion({ id: "c_x1", species: "cat" }).shy).toBe(false);
+    expect(normalizeCompanion({ id: "c_x2", species: "cat", shy: true }).shy).toBe(true);
+    // nilai korup -> jinak
+    expect(normalizeCompanion({ id: "c_x3", species: "cat", shy: "yes" }).shy).toBe(false);
+  });
+
   it("slot rotation desyncs per companion", () => {
     expect(slotPhaseFor("main")).toBe(0);
     expect(slotPeriodJitterMsFor("main")).toBe(0);

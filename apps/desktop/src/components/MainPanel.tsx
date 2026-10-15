@@ -48,6 +48,22 @@ const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
   { id: "log", icon: "history", title: "Log" },
 ];
 
+/** Kelompok tab agar 11 item bisa di-scan tanpa scroll horizontal.
+ *  Kerja = bikin/ingat, Waktu = berbasis jam, Sistem = app-nya sendiri. */
+const TAB_GROUPS: { id: string; label: string; tabs: PanelTab[] }[] = [
+  { id: "kerja", label: "Kerja", tabs: ["assistant", "reminders", "tasks", "notes"] },
+  { id: "waktu", label: "Waktu", tabs: ["timer", "calendar", "prayer", "auto"] },
+  { id: "sistem", label: "Sistem", tabs: ["companions", "settings", "log"] },
+];
+
+const TAB_BY_ID = new Map<PanelTab, { id: PanelTab; icon: IconName; title: string }>(
+  TABS.map((t) => [t.id, t]),
+);
+
+const GROUP_BY_TAB = new Map<PanelTab, string>(
+  TAB_GROUPS.flatMap((g) => g.tabs.map((t) => [t, g.id] as [PanelTab, string])),
+);
+
 export function MainPanel(p: Props) {
   // Multi-pet: fallback lokal agar caller lama (preview/test) tetap jalan.
   const [localCompanions, setLocalCompanions] = useState<Companion[]>(() => loadCompanions());
@@ -56,15 +72,42 @@ export function MainPanel(p: Props) {
     saveCompanions(c);
     (p.setCompanions ?? setLocalCompanions)(c);
   };
+  // Navigasi dua tingkat: grup aktif mengikuti tab yang terbuka; klik pil grup
+  // lompat ke tab terakhir dikunjungi di grup itu (fallback tab pertama).
+  const activeGroup = GROUP_BY_TAB.get(p.tab) ?? TAB_GROUPS[0].id;
+  const lastByGroup = useRef<Partial<Record<string, PanelTab>>>({});
+  useEffect(() => {
+    lastByGroup.current[activeGroup] = p.tab;
+  }, [p.tab, activeGroup]);
+  const groupTabs = TAB_GROUPS.find((g) => g.id === activeGroup)?.tabs ?? [];
   return (
     <div className="dp-panel" data-testid="main-panel" role="dialog" aria-label="DeskPet panel">
       <div className="dp-panel-head">
-        <div className="dp-tabs" role="tablist">
-          {TABS.map((t) => (
-            <button key={t.id} role="tab" aria-selected={p.tab === t.id}
-              className={`dp-tab${p.tab === t.id ? " on" : ""}`}
-              onClick={() => p.setTab(t.id)} title={t.title}><Icon name={t.icon} size={16} /></button>
-          ))}
+        <div className="dp-nav" role="tablist" aria-label="Navigasi panel">
+          <div className="dp-groups" role="group" aria-label="Kategori">
+            {TAB_GROUPS.map((g) => (
+              <button key={g.id} type="button"
+                className={`dp-group${g.id === activeGroup ? " on" : ""}`}
+                aria-pressed={g.id === activeGroup}
+                title={`Kategori ${g.label}`}
+                onClick={() => p.setTab(lastByGroup.current[g.id] ?? g.tabs[0])}>
+                {g.label}
+              </button>
+            ))}
+          </div>
+          <div className="dp-tabs">
+            {groupTabs.map((id) => {
+              const t = TAB_BY_ID.get(id)!;
+              return (
+                <button key={t.id} role="tab" aria-selected={p.tab === t.id}
+                  className={`dp-tab${p.tab === t.id ? " on" : ""}`}
+                  onClick={() => p.setTab(t.id)} title={t.title}>
+                  <Icon name={t.icon} size={16} />
+                  <span className="dp-tab-label">{t.title}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
         <button className="dp-x" onClick={p.onClose} title="Tutup (Esc)"><Icon name="x" size={14} /></button>
       </div>
@@ -741,18 +784,18 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
 
   const doRole = (id: string, role: CompanionRole) => doPatch(id, { role });
 
-  const clampScale = (v: number) => Math.min(2, Math.max(0.5, Math.round(v * 10) / 10));
-  const doScale = (id: string, v: number) => doPatch(id, { scale: clampScale(v) });
-
-  const doSpecies = (id: string, species: PetSpecies) => {
-    const cur = list.find((c) => c.id === id);
-    doPatch(id, cur ? speciesPatch(cur, species) : { species });
-  };
-
   return (
     <div className="dp-field" style={{ marginTop: 4 }} data-testid="companions-field">
       <span className="dp-muted">Kawan desktop · {list.length}/{MAX_COMPANIONS}</span>
-      <div className="dp-muted" style={{ fontSize: 12 }}>Tiap karakter jalan di window-nya sendiri + punya tugas (role) sendiri.</div>
+      <div className="dp-muted" style={{ fontSize: 12 }}>Kelola daftar di sini. Tampilan tiap karakter (spesies, warna, ukuran, pill) diatur via dobel-klik pet-nya → Pengaturan.</div>
+      {list.some((c) => c.shy) && (
+        <div className="dp-row">
+          <button className="dp-btn sm" onClick={() => { setCompanions(normalizeCompanionList(list.map((c) => ({ ...c, shy: false })))); notifyChanged(); }}
+            title="Matikan mode pemalu semua karakter (darurat: semua bisa didekati lagi)">
+            😌 Jinakkan semua
+          </button>
+        </div>
+      )}
       {!isDesktop && (
         <div className="dp-muted" style={{ fontSize: 12 }}>Mode preview web: daftar tersimpan, tapi window baru hanya terbuka di aplikasi desktop.</div>
       )}
@@ -777,14 +820,6 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
                 )}
               </div>
               <div className="dp-comp-grid">
-                <label className="dp-comp-label">Spesies
-                  <select className="dp-in" aria-label={`Spesies ${c.name}`}
-                    value={c.species} onChange={(e) => doSpecies(c.id, e.target.value as PetSpecies)}>
-                    {PET_SPECIES.map((s) => (
-                      <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
-                    ))}
-                  </select>
-                </label>
                 <label className="dp-comp-label">Tugas
                   <select className="dp-in" aria-label={`Tugas ${c.name}`}
                     value={c.role} onChange={(e) => doRole(c.id, e.target.value as CompanionRole)}>
@@ -793,38 +828,10 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
                     ))}
                   </select>
                 </label>
-                <label className="dp-comp-label">Warna
-                  <select className="dp-in" aria-label={`Warna ${c.name}`}
-                    title="Warna karakter ini"
-                    value={CAT_PALETTES.some((p) => p.id === c.paletteId) ? c.paletteId : "custom"}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === "custom") return; // custom via Pengaturan → Warna custom
-                      doPatch(c.id, { paletteId: v, customColor: "" });
-                    }}>
-                    {CAT_PALETTES.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                    {!CAT_PALETTES.some((p) => p.id === c.paletteId) && (
-                      <option value="custom">Custom {c.customColor}</option>
-                    )}
-                  </select>
+                <label className="dp-check" title="Pemalu: pet menjauh saat kursor hover. Tahan Shift untuk mendekat tanpa memicu kabur.">
+                  <input type="checkbox" checked={c.shy === true}
+                    onChange={(e) => doPatch(c.id, { shy: e.target.checked })} /> Pemalu
                 </label>
-              </div>
-              <div className="dp-comp-toggles">
-                <label className="dp-check" title="Tampilkan pill suhu di pet ini">
-                  <input type="checkbox" checked={c.showTemp !== false}
-                    onChange={(e) => doPatch(c.id, { showTemp: e.target.checked })} /> Suhu
-                </label>
-                <label className="dp-check" title="Tampilkan pill countdown sholat di pet ini">
-                  <input type="checkbox" checked={c.showMini !== false}
-                    onChange={(e) => doPatch(c.id, { showMini: e.target.checked })} /> Mini
-                </label>
-                <span className="dp-check" title="Ukuran karakter ini">
-                  <button className="dp-btn sm" onClick={() => doScale(c.id, (c.scale ?? 1) - 0.1)} aria-label={`Perkecil ${c.name}`} title="Perkecil">−</button>
-                  <span className="dp-muted" style={{ fontSize: 12, minWidth: 38, textAlign: "center" }}>{Math.round((c.scale ?? 1) * 100)}%</span>
-                  <button className="dp-btn sm" onClick={() => doScale(c.id, (c.scale ?? 1) + 0.1)} aria-label={`Perbesar ${c.name}`} title="Perbesar">+</button>
-                </span>
               </div>
             </div>
           );
@@ -906,6 +913,9 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
 
   return (
     <div className="dp-settings">
+      <details className="dp-acc" open>
+        <summary className="dp-acc-head">Gerak &amp; perilaku</summary>
+        <div className="dp-acc-body">
       <label className="dp-check"><input type="checkbox" checked={settings.wanderEnabled} onChange={(e) => upd({ wanderEnabled: e.target.checked })} /> Jalan otomatis (walk)</label>
       <label className="dp-check"><input type="checkbox" checked={settings.centerOnAlert !== false} onChange={(e) => upd({ centerOnAlert: e.target.checked })} /> Kembali ke tengah layar saat alert penting</label>
       <AutostartView settings={settings} upd={upd} />
@@ -947,6 +957,11 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
           </div>
         </div>
       )}
+        </div>
+      </details>
+      <details className="dp-acc" open>
+        <summary className="dp-acc-head">Karakter (window ini)</summary>
+        <div className="dp-acc-body">
       <div className="dp-row" style={{ alignItems: "center" }}>
         <label htmlFor="dp-species" style={{ minWidth: 110 }}>Karakter {target ? target.name : "pet"} (window ini)</label>
         <select
@@ -962,7 +977,7 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
         </select>
       </div>
       <div className="dp-field" style={{ marginTop: 2 }}>
-        <span className="dp-muted">Warna {target ? target.name : "karakter"} (window ini · karakter lain via tab Kawan)</span>
+        <span className="dp-muted">Warna {target ? target.name : "karakter"} (pet ini — dobel-klik pet lain untuk mengatur dia)</span>
           <div className="dp-swatches" role="radiogroup" aria-label="Warna karakter">
             {CAT_PALETTES.map((pal) => {
               const active = (target?.paletteId ?? settings.petPaletteId ?? "lavender") === pal.id;
@@ -1017,6 +1032,29 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
           aria-label="Ukuran pet" style={{ flex: 1 }} />
         <button className="dp-btn sm" onClick={() => { upd({ petScale: 1 }); syncTarget({ scale: 1 }); }}>Reset</button>
       </div>
+      {target && (
+        <div className="dp-row">
+          <label className="dp-check" title="Tampilkan pill suhu di pet ini">
+            <input type="checkbox" checked={target.showTemp !== false}
+              onChange={(e) => syncTarget({ showTemp: e.target.checked })} /> Pill suhu (pet ini)
+          </label>
+          <label className="dp-check" title="Tampilkan pill countdown sholat di pet ini">
+            <input type="checkbox" checked={target.showMini !== false}
+              onChange={(e) => syncTarget({ showMini: e.target.checked })} /> Pill countdown (pet ini)
+          </label>
+        </div>
+      )}
+      {target && (
+        <label className="dp-check" title="Pemalu: pet menjauh saat kursor hover (setelah ~0,5 dtk). Tahan Shift untuk mendekat tanpa memicu kabur. Bisa dimatikan dari tab Kawan bila pet sulit diklik.">
+          <input type="checkbox" checked={target.shy === true}
+            onChange={(e) => syncTarget({ shy: e.target.checked })} /> Pemalu — kabur saat di-hover (pet ini)
+        </label>
+      )}
+        </div>
+      </details>
+      <details className="dp-acc">
+        <summary className="dp-acc-head">Tampilan, suara &amp; waktu tenang</summary>
+        <div className="dp-acc-body">
       <label className="dp-check"><input type="checkbox" checked={settings.alwaysOnTop} onChange={(e) => upd({ alwaysOnTop: e.target.checked })} /> Selalu di atas</label>
       <label className="dp-check"><input type="checkbox" checked={settings.reducedMotion} onChange={(e) => upd({ reducedMotion: e.target.checked })} /> Gerakan tenang (reduced motion)</label>
       <label className="dp-check"><input type="checkbox" checked={settings.speechMuted} onChange={(e) => { upd({ speechMuted: e.target.checked }); if (e.target.checked) stopSpeech(); }} /> Bisukan suara (TTS)</label>
@@ -1027,11 +1065,18 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
         <button className="dp-btn sm" onClick={() => speak("Halo, saya DeskPet.", { muted: settings.speechMuted })}>Uji suara</button>
         <button className="dp-btn sm" onClick={stopSpeech}>Stop</button>
       </div>
+        </div>
+      </details>
+      <details className="dp-acc">
+        <summary className="dp-acc-head">Data &amp; tentang</summary>
+        <div className="dp-acc-body">
       <div className="dp-row"><button className="dp-btn sm" onClick={doExport}><Icon name="download" size={13} /> Backup</button>
         <button className="dp-btn sm" onClick={() => fileRef.current?.click()}><Icon name="upload" size={13} /> Restore</button>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); }} /></div>
       {savedAt && <div className="dp-muted" data-testid="settings-saved"><span className="dp-line"><Icon name="check" size={12} /> Tersimpan {savedAt} (lokal, tanpa cloud)</span></div>}
       <div className="dp-muted"><span className="dp-line"><Icon name="check" size={12} /> Local-first · telemetry OFF permanen · Gmail/Google opt-in (belum terhubung) · log aktivitas ada di tab Log.</span></div>
+        </div>
+      </details>
     </div>
   );
 }

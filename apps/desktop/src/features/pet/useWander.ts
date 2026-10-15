@@ -17,6 +17,13 @@ interface Opts {
   requestState: (s: PetState) => void;
   /** Delay awal (ms) agar N pet tidak start bareng. Default 0. */
   startDelayMs?: number;
+  /**
+   * Permintaan kabur (pet pemalu): App menaikkan `key` tiap hover yang
+   * memenuhi syarat. `dx/dy` = arah gerak MENJAUHI kursor (tiap -1/0/1).
+   * Dijalankan sekali jalan walau `paused` (hover) — tapi tetap hormat
+   * reducedMotion + sleep/drag.
+   */
+  flee?: { key: number; dx: number; dy: number } | null;
 }
 
 interface MoveLeg {
@@ -193,6 +200,147 @@ export function previewBounds(pw: number, ph: number, halfW: number, halfH: numb
   };
 }
 
+/** Jeda hover sebelum pet pemalu kabur (ms) — klik kanan cepat masih sempat buka menu. */
+export const FLEE_HOVER_MS = 500;
+/** Cooldown antar kabur (ms) agar tidak kejar-kejaran dengan kursor. */
+export const FLEE_COOLDOWN_MS = 6000;
+/** Jarak kabur (CSS px; dikali scale di Tauri physical px). */
+export const FLEE_DIST = 240;
+/** Gerak minimum agar dianggap "berhasil kabur" (px). */
+const FLEE_MIN_MOVE = 40;
+
+export interface FleeDir { dx: number; dy: number }
+
+/**
+ * Target kabur: menjauhi kursor sejauh `dist`, di-clamp ke bounds layar.
+ * Bila terjepit sudut (gerak < 40px), coba menyusuri satu sumbu, lalu ke
+ * arah sumbu yang ruangnya paling lega; bila tetap buntu, diam di tempat.
+ */
+export function fleeTargetFor(
+  pos: { x: number; y: number }, dir: FleeDir, b: WanderBounds, dist: number,
+): { x: number; y: number } {
+  const cands = [
+    { x: clamp(pos.x + dir.dx * dist, b.minX, b.maxX), y: clamp(pos.y + dir.dy * dist, b.minY, b.maxY) },
+    { x: clamp(pos.x + dir.dx * dist, b.minX, b.maxX), y: pos.y },
+    { x: pos.x, y: clamp(pos.y + dir.dy * dist, b.minY, b.maxY) },
+    { x: b.maxX - pos.x >= pos.x - b.minX ? b.maxX : b.minX, y: pos.y },
+    { x: pos.x, y: b.maxY - pos.y >= pos.y - b.minY ? b.maxY : b.minY },
+  ];
+  for (const c of cands) {
+    if (Math.hypot(c.x - pos.x, c.y - pos.y) >= FLEE_MIN_MOVE) return c;
+  }
+  return { ...pos };
+}
+
+export interface WanderSpace {
+  w: ReturnType<typeof getCurrentWindow> | null;
+  pos: { x: number; y: number };
+  scale: number;
+  bounds: WanderBounds;
+}
+
+/**
+ * Baca posisi + batas gerak saat ini (dipakai wander & flee).
+ * Tauri: koordinat physical px; web preview: koordinat CSS relatif tengah
+ * (fallback = posisi offset terakhir).
+ */
+export async function readWanderSpace(fallbackPos: { x: number; y: number }): Promise<WanderSpace> {
+  let w: ReturnType<typeof getCurrentWindow> | null = null;
+  let pos = { x: 500, y: 500 };
+  let scale = 1;
+  let minX = 0;
+  let maxX = 1700;
+  let minY = 0;
+  let maxY = 850;
+
+  try {
+    w = getCurrentWindow();
+    const p = await w.outerPosition();
+    pos = { x: p.x, y: p.y };
+    scale = await w.scaleFactor().catch(() => 1);
+    const mon = await currentMonitor().catch(() => null);
+    // Ukuran window AKTUAL (diukur, bukan asumsi): App me-resize window
+    // tight mengikuti sprite (128px*scale + breathing), melebar saat
+    // pill countdown / bubble / alert. Fallback pakai innerWidth agar
+    // tetap dinamis bila outerSize gagal dibaca.
+    let winW = Math.round((window.innerWidth || 96) * scale);
+    let winH = Math.round((window.innerHeight || 102) * scale);
+    try {
+      const s = await w.outerSize();
+      if (s.width > 0 && s.height > 0) { winW = s.width; winH = s.height; }
+    } catch { /* fallback innerWidth */ }
+    // Posisi sprite di DALAM window (CSS px, diukur live): sprite selalu
+    // di tengah horizontal; vertikal tergantung bubble/panel. Dengan
+    // begitu batas mentok cocok di semua ukuran window & skala device.
+    let pads: WanderPads = { padL: 16, padR: 16, padT: 16, padB: 16 };
+    try {
+      const vw = window.innerWidth || 96;
+      const vh = window.innerHeight || 102;
+      const r = document.querySelector(".dp-pet-wrap")?.getBoundingClientRect();
+      if (r && r.width > 0 && r.height > 0) pads = spritePads(vw, vh, r);
+    } catch { /* fallback 16 */ }
+
+    if (mon) {
+      // Work-area (taskbar dikecualikan) hanya valid untuk monitor utama
+      // (primary di 0,0). Monitor sekunder tak punya taskbar -> pakai
+      // rect monitor penuh agar bawah juga mentok.
+      const isPrimary = mon.position.x === 0 && mon.position.y === 0;
+      const work = isPrimary ? readWorkAreaPhysical(scale) : null;
+      const limits: WorkArea | null = work ?? (isPrimary ? null : {
+        left: mon.position.x, top: mon.position.y,
+        right: mon.position.x + mon.size.width,
+        bottom: mon.position.y + mon.size.height,
+      });
+      const b = tauriBounds(
+        mon.position.x, mon.position.y, mon.size.width, mon.size.height,
+        winW, winH, pads, scale, limits,
+      );
+      minX = b.minX; maxX = b.maxX; minY = b.minY; maxY = b.maxY;
+    } else {
+      // Tanpa info monitor: pakai work-area OS langsung (availWidth/
+      // availHeight SUDAH mengecualikan taskbar -> jangan kurangi lagi,
+      // kalau dikurangi dua kali bawah jadi menggantung 48px).
+      const work = readWorkAreaPhysical(scale);
+      if (work) {
+        minX = Math.round(work.left - pads.padL * scale);
+        maxX = Math.round(work.right - winW + pads.padR * scale);
+        minY = Math.round(work.top - pads.padT * scale);
+        maxY = Math.round(work.bottom - winH + pads.padB * scale);
+        if (maxX <= minX) maxX = minX + 500;
+        if (maxY <= minY) maxY = minY + 300;
+      } else {
+        const sw = (window.screen.availWidth || 1920) * scale;
+        const sh = (window.screen.availHeight || 1080) * scale;
+        const taskbar = Math.round(48 * scale);
+        minX = -Math.round(pads.padL * scale);
+        maxX = Math.round(sw - winW + pads.padR * scale);
+        minY = -Math.round(pads.padT * scale);
+        maxY = Math.round(sh - winH + pads.padB * scale - taskbar);
+        if (maxX <= minX) maxX = minX + 500;
+        if (maxY <= minY) maxY = minY + 300;
+      }
+    }
+  } catch {
+    // Web preview mode (area browser): koordinat relatif tengah.
+    // Batas memperhitungkan setengah ukuran sprite agar badan kucing
+    // yang mentok ke tepi (bukan titik tengahnya, yang bikin kepotong
+    // setengah badan di semua sisi).
+    w = null;
+    const pw = Math.max(window.innerWidth || 800, 500);
+    const ph = Math.max(window.innerHeight || 600, 400);
+    let halfW = 64, halfH = 64;
+    try {
+      const r = document.querySelector(".dp-pet-wrap")?.getBoundingClientRect();
+      if (r && r.width > 0 && r.height > 0) { halfW = r.width / 2; halfH = r.height / 2; }
+    } catch { /* fallback 64 */ }
+    const b = previewBounds(pw, ph, halfW, halfH, 4);
+    minX = b.minX; maxX = b.maxX; minY = b.minY; maxY = b.maxY;
+    pos = { ...fallbackPos };
+  }
+
+  return { w, pos, scale, bounds: { minX, maxX, minY, maxY } };
+}
+
 export function useWander({
   enabled,
   wanderPace = "random",
@@ -202,6 +350,7 @@ export function useWander({
   paused,
   requestState,
   startDelayMs = 0,
+  flee = null,
 }: Opts) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -256,98 +405,11 @@ export function useWander({
 
       try {
         // 1. Tentukan batas layar monitor fisik secara akurat (mentok sampai pinggir)
-        let w: ReturnType<typeof getCurrentWindow> | null = null;
-        let pos = { x: 500, y: 500 };
-        let scale = 1;
-        let minX = 0;
-        let maxX = 1700;
-        let minY = 0;
-        let maxY = 850;
-
-        try {
-          w = getCurrentWindow();
-          const p = await w.outerPosition();
-          pos = { x: p.x, y: p.y };
-          scale = await w.scaleFactor().catch(() => 1);
-          const mon = await currentMonitor().catch(() => null);
-          // Ukuran window AKTUAL (diukur, bukan asumsi): App me-resize window
-          // tight mengikuti sprite (128px*scale + breathing), melebar saat
-          // pill countdown / bubble / alert. Fallback pakai innerWidth agar
-          // tetap dinamis bila outerSize gagal dibaca.
-          let winW = Math.round((window.innerWidth || 96) * scale);
-          let winH = Math.round((window.innerHeight || 102) * scale);
-          try {
-            const s = await w.outerSize();
-            if (s.width > 0 && s.height > 0) { winW = s.width; winH = s.height; }
-          } catch { /* fallback innerWidth */ }
-          // Posisi sprite di DALAM window (CSS px, diukur live): sprite selalu
-          // di tengah horizontal; vertikal tergantung bubble/panel. Dengan
-          // begitu batas mentok cocok di semua ukuran window & skala device.
-          let pads: WanderPads = { padL: 16, padR: 16, padT: 16, padB: 16 };
-          try {
-            const vw = window.innerWidth || 96;
-            const vh = window.innerHeight || 102;
-            const r = document.querySelector(".dp-pet-wrap")?.getBoundingClientRect();
-            if (r && r.width > 0 && r.height > 0) pads = spritePads(vw, vh, r);
-          } catch { /* fallback 16 */ }
-
-          if (mon) {
-            // Work-area (taskbar dikecualikan) hanya valid untuk monitor utama
-            // (primary di 0,0). Monitor sekunder tak punya taskbar -> pakai
-            // rect monitor penuh agar bawah juga mentok.
-            const isPrimary = mon.position.x === 0 && mon.position.y === 0;
-            const work = isPrimary ? readWorkAreaPhysical(scale) : null;
-            const limits: WorkArea | null = work ?? (isPrimary ? null : {
-              left: mon.position.x, top: mon.position.y,
-              right: mon.position.x + mon.size.width,
-              bottom: mon.position.y + mon.size.height,
-            });
-            const b = tauriBounds(
-              mon.position.x, mon.position.y, mon.size.width, mon.size.height,
-              winW, winH, pads, scale, limits,
-            );
-            minX = b.minX; maxX = b.maxX; minY = b.minY; maxY = b.maxY;
-          } else {
-            // Tanpa info monitor: pakai work-area OS langsung (availWidth/
-            // availHeight SUDAH mengecualikan taskbar -> jangan kurangi lagi,
-            // kalau dikurangi dua kali bawah jadi menggantung 48px).
-            const work = readWorkAreaPhysical(scale);
-            if (work) {
-              minX = Math.round(work.left - pads.padL * scale);
-              maxX = Math.round(work.right - winW + pads.padR * scale);
-              minY = Math.round(work.top - pads.padT * scale);
-              maxY = Math.round(work.bottom - winH + pads.padB * scale);
-              if (maxX <= minX) maxX = minX + 500;
-              if (maxY <= minY) maxY = minY + 300;
-            } else {
-              const sw = (window.screen.availWidth || 1920) * scale;
-              const sh = (window.screen.availHeight || 1080) * scale;
-              const taskbar = Math.round(48 * scale);
-              minX = -Math.round(pads.padL * scale);
-              maxX = Math.round(sw - winW + pads.padR * scale);
-              minY = -Math.round(pads.padT * scale);
-              maxY = Math.round(sh - winH + pads.padB * scale - taskbar);
-              if (maxX <= minX) maxX = minX + 500;
-              if (maxY <= minY) maxY = minY + 300;
-            }
-          }
-        } catch {
-          // Web preview mode (area browser): koordinat relatif tengah.
-          // Batas memperhitungkan setengah ukuran sprite agar badan kucing
-          // yang mentok ke tepi (bukan titik tengahnya, yang bikin kepotong
-          // setengah badan di semua sisi).
-          w = null;
-          const pw = Math.max(window.innerWidth || 800, 500);
-          const ph = Math.max(window.innerHeight || 600, 400);
-          let halfW = 64, halfH = 64;
-          try {
-            const r = document.querySelector(".dp-pet-wrap")?.getBoundingClientRect();
-            if (r && r.width > 0 && r.height > 0) { halfW = r.width / 2; halfH = r.height / 2; }
-          } catch { /* fallback 64 */ }
-          const b = previewBounds(pw, ph, halfW, halfH, 4);
-          minX = b.minX; maxX = b.maxX; minY = b.minY; maxY = b.maxY;
-          pos = { x: offsetRef.current.x, y: offsetRef.current.y };
-        }
+        const space = await readWanderSpace(offsetRef.current);
+        const w = space.w;
+        let pos = space.pos;
+        const scale = space.scale;
+        const { minX, maxX, minY, maxY } = space.bounds;
 
         // 2. Bangun lintasan ujung-ke-ujung (Desktop-wide Patrol mentok ke pinggir)
         const pacePref = pacePrefRef.current;
@@ -603,6 +665,70 @@ export function useWander({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, wanderPace, wanderDirection, reducedMotion, paused, blocked, startDelayMs]);
+
+  // Kabur sekali jalan (pet pemalu): dipicu App via `flee.key`. Sengaja
+  // TIDAK digate `paused`/`enabled` (hover = paused, kabur justru saat
+  // hover) — tapi tetap hormat reducedMotion + sleep/drag + tabrakan
+  // dengan wander yang sedang jalan (tunggu reda maks ~1 dtk).
+  const fleeKey = flee?.key ?? 0;
+  useEffect(() => {
+    if (fleeKey === 0) return;
+    if (motionRef.current) return;
+    const s0 = stateRef.current as PetState;
+    if (s0 === "dragged" || s0 === "sleep") return;
+    const dir = { dx: flee?.dx ?? 0, dy: flee?.dy ?? 0 };
+    if (dir.dx === 0 && dir.dy === 0) return;
+    let cancelled = false;
+    void (async () => {
+      for (let i = 0; i < 20 && busy.current && !cancelled; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      if (cancelled || busy.current) return;
+      if (motionRef.current) return;
+      const s1 = stateRef.current as PetState;
+      if (s1 === "dragged" || s1 === "sleep") return;
+      busy.current = true;
+      try {
+        const space = await readWanderSpace(offsetRef.current);
+        if (cancelled) return;
+        const t = fleeTargetFor(space.pos, dir, space.bounds, FLEE_DIST * space.scale);
+        const dx = t.x - space.pos.x;
+        const dy = t.y - space.pos.y;
+        if (Math.hypot(dx, dy) < 5) return;
+        if (Math.abs(dx) > 5) setFacing(dx >= 0 ? 1 : -1);
+        setWalkSpeed("fast");
+        edgeRef.current = null; // sinkron ulang keliling dari posisi baru
+        try { reqRef.current("walk"); } catch { /* noop */ }
+        const steps = Math.max(12, Math.round(Math.hypot(dx, dy) / 8.3));
+        for (let step = 1; step <= steps; step++) {
+          if (cancelled) break;
+          const sInner = stateRef.current as PetState;
+          if (sInner === "dragged" || sInner === "sleep") break;
+          const p = step / steps;
+          const curX = space.pos.x + dx * p;
+          const curY = space.pos.y + dy * p;
+          if (space.w) {
+            try {
+              await space.w.setPosition(new PhysicalPosition(Math.round(curX), Math.round(curY)));
+            } catch {
+              offsetRef.current = { x: curX, y: curY };
+              setOffset({ x: curX, y: curY });
+            }
+          } else {
+            offsetRef.current = { x: curX, y: curY };
+            setOffset({ x: curX, y: curY });
+          }
+          await new Promise((r) => setTimeout(r, 16));
+        }
+        setWalkSpeed("normal");
+        try { reqRef.current("idle"); } catch { /* noop */ }
+      } finally {
+        busy.current = false;
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fleeKey]);
 
   // Kembalikan pet ke tengah layar saat alert penting agar jadi fokus.
   // Tauri: pindahkan window OS ke tengah monitor aktif. Web preview:

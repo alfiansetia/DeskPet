@@ -248,11 +248,24 @@ html, body, #root {
   border: 1px solid rgba(34,34,58,0.12); box-shadow: 0 16px 40px rgba(34,34,58,0.25);
   display: flex; flex-direction: column; overflow: hidden;
 }
-.dp-panel-head { display: flex; align-items: center; border-bottom: 1px solid rgba(34,34,58,0.1); padding: 4px; min-width: 0; }
-/* 11 tab tidak muat 384px: barisan tab scroll horizontal, tombol ✕ terkunci. */
-.dp-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
-.dp-tab { border: 0; background: transparent; border-radius: 8px; padding: 6px 8px; font-size: 15px; cursor: pointer; flex: none; }
+.dp-panel-head { display: flex; align-items: flex-start; border-bottom: 1px solid rgba(34,34,58,0.1); padding: 6px; min-width: 0; gap: 4px; }
+/* Navigasi dua tingkat: pil kategori + satu baris tab grup aktif (tanpa scroll). */
+.dp-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.dp-groups { display: flex; gap: 4px; }
+.dp-group { border: 0; background: rgba(34,34,58,0.06); border-radius: 999px; padding: 3px 12px; font-size: 11px; font-weight: 600; color: var(--dp-muted); cursor: pointer; }
+.dp-group.on { background: var(--dp-primary); color: #fff; }
+.dp-tabs { display: flex; flex-wrap: nowrap; gap: 2px; }
+.dp-tab { border: 0; background: transparent; border-radius: 8px; padding: 5px 7px; cursor: pointer; flex: 1; display: inline-flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; }
+.dp-tab-label { font-size: 10px; line-height: 1.2; color: var(--dp-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .dp-tab.on { background: #efedff; }
+.dp-tab.on .dp-tab-label { font-weight: 700; }
+/* Accordion pengaturan: 4 grup collapsible, tanpa JS state. */
+.dp-acc { border: 1px solid rgba(34,34,58,0.12); border-radius: 10px; margin: 6px 0; background: #fafaff; }
+.dp-acc-head { cursor: pointer; padding: 7px 10px; font-weight: 700; font-size: 12px; color: var(--dp-text); list-style: none; }
+.dp-acc-head::-webkit-details-marker { display: none; }
+.dp-acc-head::before { content: "▸"; margin-right: 6px; color: var(--dp-muted); }
+.dp-acc[open] > .dp-acc-head::before { content: "▾"; }
+.dp-acc-body { padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 2px; }
 .dp-x { border: 0; background: transparent; cursor: pointer; padding: 6px 10px; border-radius: 8px; flex: none; }
 .dp-panel-body { padding: 10px 12px; overflow: auto; font-size: 13px; color: var(--dp-text); }
 .dp-muted { color: var(--dp-muted); font-size: 12px; }
@@ -384,7 +397,6 @@ html, body, #root {
 /* Inline SVG icons (pengganti emoji) */
 .dp-icon { display: inline-flex; vertical-align: -2px; flex: none; }
 .dp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
-.dp-tab { display: inline-flex; align-items: center; }
 .dp-ctx-label { display: inline-flex; align-items: center; gap: 8px; }
 .dp-line { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .dp-field { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 0; }

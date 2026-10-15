@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { clamp, edgeStepRange, nearestEdge, nearestPointOnEdge, previewBounds, randomPointOnEdge, shouldCenterPet, sideOf, spritePads, tauriBounds, useWander, type EdgeIndex } from "./useWander";
+import { clamp, edgeStepRange, fleeTargetFor, nearestEdge, nearestPointOnEdge, previewBounds, randomPointOnEdge, shouldCenterPet, sideOf, spritePads, tauriBounds, useWander, type EdgeIndex } from "./useWander";
 
 describe("wander bounds (mentok tepi)", () => {
   it("clamp membatasi nilai ke rentang", () => {
@@ -183,6 +183,38 @@ describe("edges mode (keliling tepi layar)", () => {
         }
       }
     }
+  });
+});
+describe("fleeTargetFor (pet pemalu kabur)", () => {
+  const b = { minX: 0, maxX: 1000, minY: 0, maxY: 500 };
+
+  it("menjauhi arah kursor sejauh dist", () => {
+    // Kursor di kanan-atas pet -> kabur ke kiri-bawah.
+    const t = fleeTargetFor({ x: 500, y: 250 }, { dx: -1, dy: 1 }, b, 240);
+    expect(t).toEqual({ x: 260, y: 490 });
+  });
+
+  it("di-clamp ke bounds, tidak keluar layar", () => {
+    const t = fleeTargetFor({ x: 900, y: 250 }, { dx: 1, dy: 0 }, b, 240);
+    expect(t.x).toBe(1000); // mentok kanan
+    expect(t.y).toBe(250);
+  });
+
+  it("terjepit sudut: menyusuri sumbu yang lega, bukan diam", () => {
+    // Di pojok kanan-atas, disuruh kabur ke kanan-atas (buntu).
+    const t = fleeTargetFor({ x: 1000, y: 0 }, { dx: 1, dy: -1 }, b, 240);
+    expect(Math.hypot(t.x - 1000, t.y - 0)).toBeGreaterThanOrEqual(40);
+    expect(t.x).toBeGreaterThanOrEqual(b.minX);
+    expect(t.x).toBeLessThanOrEqual(b.maxX);
+    expect(t.y).toBeGreaterThanOrEqual(b.minY);
+    expect(t.y).toBeLessThanOrEqual(b.maxY);
+  });
+
+  it("tanpa arah: diam di tempat (tidak crash)", () => {
+    const p = { x: 500, y: 250 };
+    const t = fleeTargetFor(p, { dx: 0, dy: 0 }, b, 240);
+    expect(t.x).toBeGreaterThanOrEqual(b.minX);
+    expect(t.x).toBeLessThanOrEqual(b.maxX);
   });
 });
 describe("shouldCenterPet (fokus alert ke tengah)", () => {

@@ -6,7 +6,7 @@ import { PetCanvas } from "./components/PetCanvas/PetCanvas";
 import { MainPanel, schedulerTick, type PanelTab } from "./components/MainPanel";
 import { Icon, type IconName } from "./components/Icon";
 import { PetContextMenu, type MenuAction } from "./features/pet/PetContextMenu";
-import { useWander, shouldCenterPet, sideOf } from "./features/pet/useWander";
+import { useWander, shouldCenterPet, sideOf, FLEE_COOLDOWN_MS, FLEE_HOVER_MS } from "./features/pet/useWander";
 import { useIdleBehavior } from "./features/pet/useIdleBehavior";
 import {
   TRANSIENT_STATES, TRANSIENT_TIMEOUT_MS, canTransitionTo, type PetState,
@@ -714,9 +714,17 @@ export default function App() {
       return;
     }
     // Menoleh ke kursor saat idle + belum drag (wander sudah jeda saat hover).
+    // Sisi kursor selalu dicatat untuk mode pemalu (arah kabur = menjauhi sisi ini).
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) {
+      cursorSide.current = {
+        sx: e.clientX >= r.left + r.width / 2 ? 1 : -1,
+        sy: e.clientY >= r.top + r.height / 2 ? 1 : -1,
+      };
+    }
     if (!d?.dragging && petStateRef.current === "idle") {
-      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setFaceHold(sideOf(e.clientX, r.left + r.width / 2));
+      const rr = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setFaceHold(sideOf(e.clientX, rr.left + rr.width / 2));
     }
   }, [requestState]);
   // Selesaikan satu sesi elus: hitung, cek topi baru, sapa bahagia.
@@ -908,6 +916,47 @@ export default function App() {
   const alertActive = alertBubble !== null;
   const moodLow = (settings.petStats?.mood ?? 100) < 25; // mager: berhenti jalan
   const wanderPaused = menu !== null || panel !== null || petState === "dragged" || hovered || alertActive || moodLow;
+  // Mode pemalu: kabur saat hover — kecuali jinak sementara (tahan Shift),
+  // panel/menu/alert terbuka, mood rendah, atau reduced motion. Toggle-nya
+  // di tab Kawan / Pengaturan (bukan di pet-nya, yang justru kabur).
+  const cursorSide = useRef<{ sx: 1 | -1; sy: 1 | -1 } | null>(null);
+  const shiftHeld = useRef(false);
+  const lastFleeAt = useRef(0);
+  const [fleeReq, setFleeReq] = useState<{ key: number; dx: number; dy: number } | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftHeld.current = true;
+    };
+    const offKey = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftHeld.current = false;
+    };
+    const offBlur = () => { shiftHeld.current = false; };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", offKey);
+    window.addEventListener("blur", offBlur);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", offKey);
+      window.removeEventListener("blur", offBlur);
+    };
+  }, []);
+  const shyArmed = (me?.shy === true)
+    && !settings.reducedMotion && petState === "idle"
+    && menu === null && panel === null && !alertActive && !moodLow;
+  useEffect(() => {
+    if (!hovered || !shyArmed || shiftHeld.current) return;
+    if (Date.now() - lastFleeAt.current < FLEE_COOLDOWN_MS) return;
+    const t = setTimeout(() => {
+      if (shiftHeld.current) return; // jinak: Shift ditahan saat timeout tiba
+      if (Date.now() - lastFleeAt.current < FLEE_COOLDOWN_MS) return;
+      const s = cursorSide.current;
+      if (!s) return;
+      lastFleeAt.current = Date.now();
+      setFleeReq((k) => ({ key: (k?.key ?? 0) + 1, dx: -s.sx, dy: -s.sy }));
+    }, FLEE_HOVER_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hovered, shyArmed]);
   const { offset, facing, walkSpeed, centerPet } = useWander({
     enabled: settings.wanderEnabled,
     wanderPace: settings.wanderPace ?? "random",
@@ -917,6 +966,7 @@ export default function App() {
     paused: wanderPaused,
     requestState,
     startDelayMs: phaseDelayMsFor(ownId),
+    flee: fleeReq,
   });
 
   // Alert penting -> pet kembali ke tengah layar agar jadi fokus.
