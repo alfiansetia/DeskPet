@@ -1,168 +1,240 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  buildPollUrl, fetchPoll, normalizeApiWatch, parsePollResponse,
-  selectNewItems, testEndpoint,
+  fetchNtfyCache, normalizeApiWatch, normalizeServer, normalizeTopic,
+  ntfyPollUrl, ntfySseUrl, parseNtfyMessage, parseNtfyPollText, testNtfy, testSubscribe,
 } from "./apiwatch";
 
 beforeEach(() => { localStorage.clear(); });
 
-describe("normalizeApiWatch (endpoint dari cache, tanpa hardcode URL)", () => {
-  it("default aman: mati, URL kosong (belum dikonfigurasi)", () => {
+describe("normalize (topic saja di setting)", () => {
+  it("default aman: mati, topic kosong", () => {
     const c = normalizeApiWatch({});
     expect(c.enabled).toBe(false);
-    expect(c.intervalSecs).toBe(60);
-    expect(c.baseUrl).toBe("");
-    expect(c.lastSeenId).toBeNull();
+    expect(c.topic).toBe("");
+    expect(c.server).toBe("https://ntfy.sh");
+    expect(c.lastMsgId).toBeNull();
   });
 
-  it("clamp interval 30..3600", () => {
-    expect(normalizeApiWatch({ intervalSecs: 5 }).intervalSecs).toBe(30);
-    expect(normalizeApiWatch({ intervalSecs: 99999 }).intervalSecs).toBe(3600);
-    expect(normalizeApiWatch({ intervalSecs: 120 }).intervalSecs).toBe(120);
+  it("topic valid lolos, invalid -> kosong", () => {
+    expect(normalizeTopic("contoh-topik")).toBe("contoh-topik");
+    expect(normalizeTopic("a-b_c9")).toBe("a-b_c9");
+    expect(normalizeTopic("ada spasi")).toBe("");
+    expect(normalizeTopic("")).toBe("");
+    expect(normalizeTopic("x".repeat(65))).toBe("");
   });
 
-  it("URL kosong / non-http -> tetap kosong (jangan fetch)", () => {
-    expect(normalizeApiWatch({ baseUrl: "" }).baseUrl).toBe("");
-    expect(normalizeApiWatch({ baseUrl: "ftp://x" }).baseUrl).toBe("");
-    expect(normalizeApiWatch({ baseUrl: "javascript:alert(1)" }).baseUrl).toBe("");
-    const ok = normalizeApiWatch({ baseUrl: "https://contoh.id/api/notif/" });
-    expect(ok.baseUrl).toBe("https://contoh.id/api/notif"); // trailing slash dipangkas
+  it("server invalid -> default ntfy.sh", () => {
+    expect(normalizeServer("")).toBe("https://ntfy.sh");
+    expect(normalizeServer("ftp://x")).toBe("https://ntfy.sh");
+    expect(normalizeServer("https://ntfy.domain.id/")).toBe("https://ntfy.domain.id");
   });
 
-  it("fetchPoll tanpa endpoint -> gagal cepat tanpa network", async () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
+  it("migrasi config polling lama (baseUrl ntfy) -> topic", () => {
+    const c = normalizeApiWatch({ baseUrl: "https://ntfy.sh/contoh-topik/sse" } as never);
+    expect(c.topic).toBe("contoh-topik");
+    // self-host ntfy ikut migrasi
+    const c2 = normalizeApiWatch({ baseUrl: "https://ntfy.kantor.id/topik-ku_1/json?poll=1" } as never);
+    expect(c2.topic).toBe("topik-ku_1");
+    // URL API polling lama yang multi-segmen JANGAN jadi topic
+    const d = normalizeApiWatch({ baseUrl: "https://contoh.id/api/notif" } as never);
+    expect(d.topic).toBe("");
+    const e = normalizeApiWatch({ baseUrl: "https://contoh.id/api/notif-histories/poll" } as never);
+    expect(e.topic).toBe("");
+  });
+});
+
+describe("URL ntfy", () => {
+  it("sse + poll", () => {
+    expect(ntfySseUrl("https://ntfy.sh", "contoh-topik")).toBe("https://ntfy.sh/contoh-topik/sse");
+    expect(ntfyPollUrl("https://ntfy.sh/", "contoh-topik")).toBe("https://ntfy.sh/contoh-topik/json?poll=1");
+    expect(ntfySseUrl("https://ntfy.sh", "contoh-topik", "abc")).toBe("https://ntfy.sh/contoh-topik/sse?since=abc");
+  });
+});
+
+describe("parse pesan ntfy", () => {
+  it("event message -> item", () => {
+    const it1 = parseNtfyMessage({ id: "abc", event: "message", topic: "contoh-topik", title: "Judul contoh", message: "isi", time: 1760416081 });
+    expect(it1).toMatchObject({ key: "abc", title: "Judul contoh", body: "isi" });
+    expect(it1?.sentAt).toBe(new Date(1760416081 * 1000).toISOString());
+  });
+
+  it("tanpa title -> pakai potongan message", () => {
+    const it1 = parseNtfyMessage({ id: "x1", event: "message", message: "halo dunia" });
+    expect(it1?.title).toBe("halo dunia");
+  });
+
+  it("bukan message / rusak -> null, tak pernah throw", () => {
+    expect(parseNtfyMessage({ id: "k", event: "keepalive" })).toBeNull();
+    expect(parseNtfyMessage({ event: "message" })).toBeNull();
+    expect(parseNtfyMessage(null)).toBeNull();
+    expect(parseNtfyMessage("sampah")).toBeNull();
+  });
+
+  it("NDJSON poll -> list item, baris rusak dilewat", () => {
+    const text = [
+      JSON.stringify({ id: "a", event: "message", title: "T1", message: "B1", time: 1 }),
+      "bukan json",
+      JSON.stringify({ event: "open" }),
+      JSON.stringify({ id: "b", event: "message", title: "T2", message: "B2", time: 2 }),
+    ].join("\n");
+    const items = parseNtfyPollText(text);
+    expect(items.map((i) => i.key)).toEqual(["a", "b"]);
+    expect(parseNtfyPollText("")).toEqual([]);
+  });
+});
+
+describe("fetchNtfyCache / testNtfy (mock network)", () => {
+  const cfg = normalizeApiWatch({ enabled: true, server: "https://ntfy.sh", topic: "contoh-topik" });
+
+  it("tanpa topic -> gagal cepat tanpa network", async () => {
+    const spy = vi.fn();
+    vi.stubGlobal("fetch", spy);
     try {
-      const r = await fetchPoll(normalizeApiWatch({ enabled: true }));
+      const r = await fetchNtfyCache(normalizeApiWatch({ enabled: true }));
       expect(r.ok).toBe(false);
-      expect(r.error).toBe("endpoint belum diisi");
-      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(r.error).toBe("isi topic dulu");
+      expect(spy).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("testEndpoint tanpa endpoint -> pesan isi dulu", async () => {
-    const r = await testEndpoint("");
-    expect(r.ok).toBe(false);
-    expect(r.error).toContain("isi endpoint dulu");
-  });
-});
-
-describe("buildPollUrl", () => {
-  it("tanpa cursor -> URL bersih", () => {
-    expect(buildPollUrl("https://a.id/poll/", null)).toBe("https://a.id/poll");
-  });
-  it("dengan cursor -> ?since_id=", () => {
-    expect(buildPollUrl("https://a.id/poll", 17)).toBe("https://a.id/poll?since_id=17");
-  });
-  it("hormati query bawaan", () => {
-    expect(buildPollUrl("https://a.id/poll?token=x", 17)).toBe("https://a.id/poll?token=x&since_id=17");
-  });
-});
-
-describe("parsePollResponse (kontrak mapwho)", () => {
-  const sample = {
-    data: [{
-      id: 18, type: "do_baru", title: "⚠️ Ada DO Baru!, CENT/OUT/17654",
-      body: "SO : SO16372 ...", do_name: "CENT/OUT/17654",
-      status: "success", sent_at: "2026-10-14T07:08:01.000000Z",
-    }],
-    latest_id: 18, count: 1, has_more: false,
-  };
-
-  it("ambil title/body + latest_id", () => {
-    const p = parsePollResponse(sample);
-    expect(p.items).toHaveLength(1);
-    expect(p.items[0]).toMatchObject({ id: 18, title: "⚠️ Ada DO Baru!, CENT/OUT/17654" });
-    expect(p.latestId).toBe(18);
-    expect(p.count).toBe(1);
-  });
-
-  it("kosong (since_id=latest) -> nol item", () => {
-    const p = parsePollResponse({ data: [], latest_id: 18, count: 0, has_more: false });
-    expect(p.items).toEqual([]);
-    expect(p.latestId).toBe(18);
-  });
-
-  it("item rusak dilewat, tak pernah throw", () => {
-    const p = parsePollResponse({ data: [{ id: "x" }, null, { id: 5, title: "T", body: "B" }], latest_id: 5 });
-    expect(p.items).toEqual([{ id: 5, title: "T", body: "B", type: undefined, sentAt: undefined }]);
-    expect(parsePollResponse("sampah")).toEqual({ items: [], latestId: null, count: 0 });
-    expect(parsePollResponse(null)).toEqual({ items: [], latestId: null, count: 0 });
-  });
-});
-
-describe("selectNewItems (cursor lastSeenId)", () => {
-  it("belum baseline (null) -> tidak ada yang 'baru' (anti-spam 18 notif)", () => {
-    const p = parsePollResponse({ data: [{ id: 1, title: "A", body: "b" }], latest_id: 1 });
-    expect(selectNewItems(p, null)).toEqual([]);
-  });
-  it("hanya id > cursor", () => {
-    const p = parsePollResponse({
-      data: [{ id: 17, title: "A", body: "a" }, { id: 18, title: "B", body: "b" }],
-      latest_id: 18,
-    });
-    expect(selectNewItems(p, 17).map((i) => i.id)).toEqual([18]);
-    expect(selectNewItems(p, 18)).toEqual([]);
-  });
-});
-
-describe("fetchPoll / testEndpoint (mock network)", () => {
-  const cfg = normalizeApiWatch({ enabled: true, baseUrl: "https://a.id/poll", lastSeenId: 17 });
-
-  it("sukses: URL membawa since_id", async () => {
-    const spy = vi.fn().mockResolvedValue({
-      ok: true, status: 200,
-      json: async () => ({ data: [{ id: 18, title: "T", body: "B" }], latest_id: 18, count: 1 }),
-    });
+  it("sukses: hit URL poll ntfy + parse NDJSON", async () => {
+    const line = JSON.stringify({ id: "abc", event: "message", title: "T", message: "B", time: 10 });
+    const spy = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => `${line}\n` });
     vi.stubGlobal("fetch", spy);
     try {
-      const r = await fetchPoll(cfg);
+      const r = await fetchNtfyCache(cfg);
       expect(r.ok).toBe(true);
-      expect(spy.mock.calls[0][0]).toBe("https://a.id/poll?since_id=17");
-      expect(r.parsed.items.map((i) => i.id)).toEqual([18]);
+      expect(spy.mock.calls[0][0]).toBe("https://ntfy.sh/contoh-topik/json?poll=1");
+      expect(r.cache.items.map((i) => i.key)).toEqual(["abc"]);
+      expect(r.cache.latestMsgId).toBe("abc");
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
   it("HTTP error -> ok:false tanpa throw", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => null }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => "" }));
     try {
-      const r = await fetchPoll(cfg);
+      const r = await fetchNtfyCache(cfg);
       expect(r.ok).toBe(false);
-      expect(r.error).toBe("HTTP 500");
+      expect(r.error).toBe("HTTP 404");
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("offline -> ok:false tanpa throw", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+  it("testNtfy tanpa ubah simpanan + kembalikan preview", async () => {
+    const line = JSON.stringify({ id: "z", event: "message", title: "Judul contoh", message: "isi panjang", time: 5 });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => `${line}\n` }));
     try {
-      const r = await fetchPoll(cfg);
-      expect(r.ok).toBe(false);
-      expect(r.httpStatus).toBeNull();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it("testEndpoint tidak butuh cursor + kembalikan preview", async () => {
-    const spy = vi.fn().mockResolvedValue({
-      ok: true, status: 200,
-      json: async () => ({ data: [{ id: 18, title: "DO Baru", body: "isi panjang" }], latest_id: 18, count: 1 }),
-    });
-    vi.stubGlobal("fetch", spy);
-    try {
-      const r = await testEndpoint("https://a.id/poll");
+      const r = await testNtfy("https://ntfy.sh", "contoh-topik");
       expect(r.ok).toBe(true);
-      expect(r.latestId).toBe(18);
-      expect(r.previewTitle).toBe("DO Baru");
-      expect(spy.mock.calls[0][0]).toBe("https://a.id/poll"); // tanpa since_id
+      expect(r.latestMsgId).toBe("z");
+      expect(r.previewTitle).toBe("Judul contoh");
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+
+  it("testNtfy topic kosong -> pesan isi dulu", async () => {
+    const r = await testNtfy("https://ntfy.sh", "ada spasi");
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("isi topic dulu");
+  });
+});
+
+describe("testSubscribe (verifikasi SSE live)", () => {
+  const RealES = (globalThis as Record<string, unknown>).EventSource;
+
+  const stubES = (fire: "open" | "error") => {
+    const instances: Array<{ close: () => void; url: string; closed: boolean }> = [];
+    class FakeES {
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: ((ev: unknown) => void) | null = null;
+      url: string;
+      closed = false;
+      constructor(url: string) {
+        this.url = url;
+        instances.push(this);
+        setTimeout(() => {
+          if (fire === "open") this.onopen?.();
+          else this.onerror?.();
+        }, 0);
+      }
+      close() { this.closed = true; }
+    }
+    vi.stubGlobal("EventSource", FakeES);
+    return instances;
+  };
+
+  it("topic kosong -> gagal tanpa buka koneksi", async () => {
+    const spy = vi.fn();
+    vi.stubGlobal("EventSource", spy);
+    try {
+      const r = await testSubscribe("https://ntfy.sh", "ada spasi", 500);
+      expect(r.ok).toBe(false);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      if (RealES !== undefined) vi.stubGlobal("EventSource", RealES);
+    }
+  });
+
+  it("server EventSource dibuka ke URL SSE + open -> ok:true", async () => {
+    const instances = stubES("open");
+    try {
+      const r = await testSubscribe("https://ntfy.sh", "contoh-topik", 2000);
+      expect(r.ok).toBe(true);
+      expect(r.error).toBeNull();
+      expect(instances).toHaveLength(1);
+      expect(instances[0].url).toBe("https://ntfy.sh/contoh-topik/sse");
+      expect(instances[0].closed).toBe(true); // langsung ditutup lagi
+    } finally {
+      vi.unstubAllGlobals();
+      if (RealES !== undefined) vi.stubGlobal("EventSource", RealES);
+    }
+  });
+
+  it("error SSE -> ok:false", async () => {
+    stubES("error");
+    try {
+      const r = await testSubscribe("https://ntfy.sh", "contoh-topik", 2000);
+      expect(r.ok).toBe(false);
+      expect(r.error).toContain("SSE");
+    } finally {
+      vi.unstubAllGlobals();
+      if (RealES !== undefined) vi.stubGlobal("EventSource", RealES);
+    }
+  });
+
+  it("subscribeNtfy lanjut dari lastMsgId (?since=) agar pesan terlewat ke-replay", async () => {
+    const seen: Array<{ url: string; closed: boolean; close: () => void }> = [];
+    class QuietES {
+      url: string;
+      closed = false;
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onmessage: ((ev: unknown) => void) | null = null;
+      constructor(url: string) { this.url = url; seen.push(this); }
+      close() { this.closed = true; }
+    }
+    vi.stubGlobal("EventSource", QuietES);
+    try {
+      const { subscribeNtfy: sub } = await import("./apiwatch");
+      const unsub = sub(
+        normalizeApiWatch({ enabled: true, server: "https://ntfy.sh", topic: "contoh-topik", lastMsgId: "abc123" }),
+        { onItem: () => {} },
+      );
+      expect(seen).toHaveLength(1);
+      expect(seen[0].url).toBe("https://ntfy.sh/contoh-topik/sse?since=abc123");
+      unsub();
+      expect(seen[0].closed).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      if (RealES !== undefined) vi.stubGlobal("EventSource", RealES);
     }
   });
 });

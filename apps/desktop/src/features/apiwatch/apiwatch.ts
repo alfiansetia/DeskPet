@@ -1,206 +1,287 @@
-/** API Watch: polling generik ke endpoint notifikasi (mis. Laravel).
- * Local-first + opt-in: mati secara default, endpoint & interval dari setting
- * (TIDAK di-hardcode), state cursor `lastSeenId` di localStorage.
+/** API Watch via ntfy: listen pesan push, bukan polling HTTP.
+ * Local-first + opt-in: mati default, cuma butuh nama topic (+opsional server).
+ * Backend cukup POST ke topic saat ada notif baru; DeskPet listen SSE:
+ *   GET {server}/{topic}/sse   (live, via EventSource)
+ *   GET {server}/{topic}/json?poll=1 (sekali, untuk Test koneksi)
  *
- * Kontrak endpoint yang didukung (seperti /api/notif-histories/poll):
- *   GET {baseUrl}                 -> { data: [...], latest_id, count }
- *   GET {baseUrl}?since_id={n}    -> hanya item dengan id > n
- *   item: { id: number, title: string, body: string, ... }
+ * Format pesan ntfy (per baris/event):
+ *   {"id":"...","event":"message","topic":"...","title":"...","message":"...",
+ *    "time":1710000000}
  */
 import { loadJSON, saveJSON } from "../../lib/storage";
 
 export interface ApiWatchItem {
-  id: number;
+  /** id pesan ntfy (string acak). */
+  key: string;
   title: string;
   body: string;
-  type?: string;
+  ntfyId?: string;
   sentAt?: string;
 }
 
 export interface ApiWatchConfig {
   enabled: boolean;
-  /** Tanpa trailing slash. Query `?since_id=` ditambah otomatis saat polling. */
-  baseUrl: string;
-  /** Detik antar polling. Dibatasi MIN_INTERVAL_SECS agar tidak menghajar server. */
-  intervalSecs: number;
-  /** Cursor: id terbesar yang sudah diproses. null = belum pernah baseline. */
-  lastSeenId: number | null;
+  /** Mis. https://ntfy.sh (tanpa trailing slash). */
+  server: string;
+  /** Nama topic, mis. contoh-topik. Hanya [A-Za-z0-9_-], maks 64. */
+  topic: string;
+  /** id pesan terakhir yang sudah diproses (dedupe reconnect). */
+  lastMsgId: string | null;
   lastCheckedAt: string | null;
   lastError: string | null;
-  /** Simpan tiap item baru sebagai row di tab Pengingat (selain bubble/toast). */
+  /** Simpan tiap pesan baru sebagai row di tab Pengingat. */
   saveAsReminder: boolean;
-  /** Bacakan judul via TTS saat item baru (hormati quiet-hours + mute). */
+  /** Bacakan judul via TTS saat pesan baru (hormati quiet-hours + mute). */
   speakNew: boolean;
 }
 
 export const APIWATCH_KEY = "deskpet:apiwatch";
-export const MIN_INTERVAL_SECS = 30;
-export const MAX_INTERVAL_SECS = 3600;
+export const DEFAULT_NTFY_SERVER = "https://ntfy.sh";
 export const FETCH_TIMEOUT_MS = 12_000;
 
-/** Sengaja TANPA default URL: endpoint bisa berubah-ubah, jadi hanya
- *  dibaca dari cache (localStorage) yang diisi user via tab API Watch.
- *  Kosong = belum dikonfigurasi = polling diam (tidak fetch). */
 export const DEFAULT_APIWATCH: ApiWatchConfig = {
   enabled: false,
-  baseUrl: "",
-  intervalSecs: 60,
-  lastSeenId: null,
+  server: DEFAULT_NTFY_SERVER,
+  topic: "",
+  lastMsgId: null,
   lastCheckedAt: null,
   lastError: null,
   saveAsReminder: true,
   speakNew: false,
 };
 
-/** Validasi + isi default. URL kosong / bukan http(s) -> "" (belum diisi),
- *  bukan fallback ke URL mana pun. */
-export function normalizeApiWatch(raw: Partial<ApiWatchConfig>): ApiWatchConfig {
-  const t = typeof raw.baseUrl === "string" ? raw.baseUrl.trim().replace(/\/+$/, "") : "";
-  const baseUrl = /^https?:\/\/.{3,2000}$/.test(t) ? t : "";
-  const intervalSecs = typeof raw.intervalSecs === "number" && Number.isFinite(raw.intervalSecs)
-    ? Math.min(MAX_INTERVAL_SECS, Math.max(MIN_INTERVAL_SECS, Math.floor(raw.intervalSecs)))
-    : DEFAULT_APIWATCH.intervalSecs;
-  const lastSeenId = typeof raw.lastSeenId === "number" && Number.isFinite(raw.lastSeenId) && raw.lastSeenId >= 0
-    ? Math.floor(raw.lastSeenId)
+/** Server valid = http(s)://... ; selain itu fallback default. */
+export function normalizeServer(raw: unknown): string {
+  const t = typeof raw === "string" ? raw.trim().replace(/\/+$/, "") : "";
+  return /^https?:\/\/.{3,2000}$/.test(t) ? t : DEFAULT_NTFY_SERVER;
+}
+
+/** Topic ntfy valid: 1..64 char [A-Za-z0-9_-]. Selain itu "". */
+export function normalizeTopic(raw: unknown): string {
+  const t = typeof raw === "string" ? raw.trim() : "";
+  return /^[A-Za-z0-9_-]{1,64}$/.test(t) ? t : "";
+}
+
+type LegacyConfig = Partial<ApiWatchConfig> & {
+  baseUrl?: unknown;
+  lastSeenId?: unknown;
+  intervalSecs?: unknown;
+};
+
+/** Validasi + isi default. Migrasikan config polling lama (baseUrl ntfy) ke topic. */
+export function normalizeApiWatch(raw: LegacyConfig): ApiWatchConfig {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  let topic = normalizeTopic(o.topic);
+  if (!topic && typeof o.baseUrl === "string") {
+    // Dukung migrasi config polling lama HANYA bila host-nya ntfy:
+    // "https://ntfy.sh/topik", ".../topik/sse", ".../topik/json?poll=1".
+    // URL API polling lama yang multi-segmen (mis. /api/notif.../poll) sengaja TIDAK
+    // dimigrasi agar tidak jadi topic ngawur.
+    const m = o.baseUrl.trim().match(/^https?:\/\/[^/]*ntfy[^/]*\/([A-Za-z0-9_-]{1,64})(?:\/(?:sse|json))?\/?(?:[?#].*)?$/);
+    if (m) topic = m[1];
+  }
+  const lastMsgId = typeof o.lastMsgId === "string" && o.lastMsgId.length > 0 && o.lastMsgId.length <= 256
+    ? o.lastMsgId
     : null;
   return {
-    enabled: raw.enabled === true,
-    baseUrl,
-    intervalSecs,
-    lastSeenId,
-    lastCheckedAt: typeof raw.lastCheckedAt === "string" ? raw.lastCheckedAt : null,
-    lastError: typeof raw.lastError === "string" ? raw.lastError : null,
-    saveAsReminder: raw.saveAsReminder !== false,
-    speakNew: raw.speakNew === true,
+    enabled: o.enabled === true,
+    server: normalizeServer(o.server),
+    topic,
+    lastMsgId,
+    lastCheckedAt: typeof o.lastCheckedAt === "string" ? o.lastCheckedAt : null,
+    lastError: typeof o.lastError === "string" ? o.lastError : null,
+    saveAsReminder: o.saveAsReminder !== false,
+    speakNew: o.speakNew === true,
   };
 }
 
 export function loadApiWatch(): ApiWatchConfig {
-  return normalizeApiWatch(loadJSON<Partial<ApiWatchConfig>>(APIWATCH_KEY, {}));
+  return normalizeApiWatch(loadJSON<LegacyConfig>(APIWATCH_KEY, {}));
 }
 
 export function saveApiWatch(cfg: ApiWatchConfig): void {
   saveJSON(APIWATCH_KEY, normalizeApiWatch(cfg));
 }
 
-/** "https://x/poll" + since 17 -> "https://x/poll?since_id=17" (hormati query bawaan). */
-export function buildPollUrl(baseUrl: string, sinceId: number | null): string {
-  const base = baseUrl.trim().replace(/\/+$/, "");
-  if (sinceId === null) return base;
-  const sep = base.includes("?") ? "&" : "?";
-  return `${base}${sep}since_id=${encodeURIComponent(String(sinceId))}`;
+/** "https://ntfy.sh" + "contoh-topik" -> "https://ntfy.sh/contoh-topik/sse" */
+export function ntfySseUrl(server: string, topic: string, sinceId: string | null = null): string {
+  const base = `${normalizeServer(server)}/${normalizeTopic(topic)}`;
+  if (sinceId) return `${base}/sse?since=${encodeURIComponent(sinceId)}`;
+  return `${base}/sse`;
 }
 
-export interface ParsedPoll {
-  items: ApiWatchItem[];
-  latestId: number | null;
-  count: number;
+/** URL polling sekali (untuk Test): ".../topik/json?poll=1" */
+export function ntfyPollUrl(server: string, topic: string): string {
+  return `${normalizeServer(server)}/${normalizeTopic(topic)}/json?poll=1`;
 }
 
-function toItem(r: unknown): ApiWatchItem | null {
-  if (!r || typeof r !== "object") return null;
-  const o = r as Record<string, unknown>;
-  if (typeof o.id !== "number" || !Number.isFinite(o.id)) return null;
-  if (typeof o.title !== "string" || typeof o.body !== "string") return null;
-  return {
-    id: Math.floor(o.id),
-    title: o.title.slice(0, 300),
-    body: o.body.slice(0, 4000),
-    type: typeof o.type === "string" ? o.type : undefined,
-    sentAt: typeof o.sent_at === "string" ? o.sent_at : undefined,
-  };
-}
-
-/** Murni: ubah JSON mentah -> item valid + cursor. Tak dikenal -> dilewat, tak pernah throw. */
-export function parsePollResponse(json: unknown): ParsedPoll {
+/** Satu event/baris ntfy -> item. Bukan event message -> null. Tak pernah throw. */
+export function parseNtfyMessage(raw: unknown): ApiWatchItem | null {
   try {
-    const o = (json ?? {}) as Record<string, unknown>;
-    const raw = Array.isArray(o.data) ? o.data : [];
-    const items = raw
-      .map(toItem)
-      .filter((x): x is ApiWatchItem => x !== null)
-      .sort((a, b) => a.id - b.id)
-      .slice(0, 100);
-    const latestId = typeof o.latest_id === "number" && Number.isFinite(o.latest_id)
-      ? Math.floor(o.latest_id)
-      : (items.length > 0 ? items[items.length - 1].id : null);
-    const count = typeof o.count === "number" ? o.count : items.length;
-    return { items, latestId, count };
+    if (!raw || typeof raw !== "object") return null;
+    const o = raw as Record<string, unknown>;
+    if (o.event !== undefined && o.event !== "message") return null;
+    if (typeof o.id !== "string" || o.id.length === 0) return null;
+    const titleRaw = typeof o.title === "string" ? o.title.trim() : "";
+    const msgRaw = typeof o.message === "string" ? o.message : "";
+    const topicRaw = typeof o.topic === "string" ? o.topic : "";
+    const title = (titleRaw || msgRaw.slice(0, 80).trim() || topicRaw || "(tanpa judul)").slice(0, 300);
+    const body = msgRaw.slice(0, 4000);
+    const time = typeof o.time === "number" && Number.isFinite(o.time) ? o.time : null;
+    return {
+      key: o.id,
+      title,
+      body,
+      ntfyId: o.id,
+      sentAt: time ? new Date(time * 1000).toISOString() : undefined,
+    };
   } catch {
-    return { items: [], latestId: null, count: 0 };
+    return null;
   }
 }
 
-/** Murni: item yang id-nya lebih besar dari cursor (urut naik). */
-export function selectNewItems(parsed: ParsedPoll, lastSeenId: number | null): ApiWatchItem[] {
-  if (lastSeenId === null) return [];
-  return parsed.items.filter((it) => it.id > lastSeenId);
+/** Body NDJSON dari /json?poll=1 -> item pesan (urut waktu, maks 100). */
+export function parseNtfyPollText(text: string): ApiWatchItem[] {
+  const out: ApiWatchItem[] = [];
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      const it = parseNtfyMessage(JSON.parse(t) as unknown);
+      if (it) out.push(it);
+    } catch {
+      /* baris rusak dilewat */
+    }
+    if (out.length >= 100) break;
+  }
+  return out;
 }
 
-export interface PollOutcome {
-  ok: boolean;
-  httpStatus: number | null;
-  parsed: ParsedPoll;
-  error: string | null;
-}
-
-async function fetchJSON(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<{ status: number; json: unknown }> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const r = await fetch(url, { signal: ctrl.signal, headers: { Accept: "application/json" } });
-    const status = r.status;
-    if (!r.ok) return { status, json: null };
-    return { status, json: (await r.json()) as unknown };
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-/** Satu putaran polling. Tidak pernah throw; offline/HTTP-error/belum
- *  dikonfigurasi -> ok:false. */
-export async function fetchPoll(cfg: ApiWatchConfig): Promise<PollOutcome> {
-  if (!cfg.baseUrl) {
-    return { ok: false, httpStatus: null, parsed: { items: [], latestId: null, count: 0 }, error: "endpoint belum diisi" };
-  }
-  const url = buildPollUrl(cfg.baseUrl, cfg.lastSeenId);
-  try {
-    const { status, json } = await fetchJSON(url);
-    if (json === null) return { ok: false, httpStatus: status, parsed: { items: [], latestId: null, count: 0 }, error: `HTTP ${status}` };
-    return { ok: true, httpStatus: status, parsed: parsePollResponse(json), error: null };
-  } catch (e) {
-    const msg = e instanceof Error && e.name === "AbortError" ? "timeout 12 dtk" : "network offline/gagal";
-    return { ok: false, httpStatus: null, parsed: { items: [], latestId: null, count: 0 }, error: msg };
-  }
+export interface NtfyCache {
+  items: ApiWatchItem[];
+  latestMsgId: string | null;
+  count: number;
 }
 
 export interface TestOutcome {
   ok: boolean;
   httpStatus: number | null;
   count: number;
-  latestId: number | null;
+  latestMsgId: string | null;
   previewTitle: string | null;
   previewBody: string | null;
   error: string | null;
+  /** Hasil verifikasi subscribe SSE live (null = belum dicek). */
+  sseOk: boolean | null;
+  sseError: string | null;
 }
 
-/** Uji endpoint dari UI: fetch TANPA since_id, tanpa mengubah cursor tersimpan. */
-export async function testEndpoint(baseUrl: string): Promise<TestOutcome> {
-  const norm = normalizeApiWatch({ baseUrl });
-  if (!norm.baseUrl) {
-    return { ok: false, httpStatus: null, count: 0, latestId: null, previewTitle: null, previewBody: null, error: "isi endpoint dulu (harus http(s)://…)" };
+async function fetchText(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<{ status: number; text: string | null }> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal, headers: { Accept: "application/json, text/event-stream" } });
+    if (!r.ok) return { status: r.status, text: null };
+    return { status: r.status, text: await r.text() };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Ambil pesan cached sekali (untuk Test tombol; bukan loop). Tak pernah throw. */
+export async function fetchNtfyCache(cfg: ApiWatchConfig): Promise<{ ok: boolean; httpStatus: number | null; cache: NtfyCache; error: string | null }> {
+  if (!cfg.topic) {
+    return { ok: false, httpStatus: null, cache: { items: [], latestMsgId: null, count: 0 }, error: "isi topic dulu" };
   }
   try {
-    const { status, json } = await fetchJSON(norm.baseUrl);
-    if (json === null) return { ok: false, httpStatus: status, count: 0, latestId: null, previewTitle: null, previewBody: null, error: `HTTP ${status}` };
-    const p = parsePollResponse(json);
-    const last = p.items.length > 0 ? p.items[p.items.length - 1] : null;
+    const { status, text } = await fetchText(ntfyPollUrl(cfg.server, cfg.topic));
+    if (text === null) return { ok: false, httpStatus: status, cache: { items: [], latestMsgId: null, count: 0 }, error: `HTTP ${status}` };
+    const items = parseNtfyPollText(text);
     return {
-      ok: true, httpStatus: status, count: p.count, latestId: p.latestId,
-      previewTitle: last?.title ?? null, previewBody: last?.body.slice(0, 200) ?? null, error: null,
+      ok: true, httpStatus: status,
+      cache: { items, latestMsgId: items.length > 0 ? items[items.length - 1].key : null, count: items.length },
+      error: null,
     };
   } catch (e) {
     const msg = e instanceof Error && e.name === "AbortError" ? "timeout 12 dtk" : "network offline/gagal";
-    return { ok: false, httpStatus: null, count: 0, latestId: null, previewTitle: null, previewBody: null, error: msg };
+    return { ok: false, httpStatus: null, cache: { items: [], latestMsgId: null, count: 0 }, error: msg };
   }
+}
+
+/** Uji topic dari UI: fetch cache TANPA mengubah lastMsgId tersimpan. */
+export async function testNtfy(server: string, topic: string): Promise<TestOutcome> {
+  const cfg = normalizeApiWatch({ server, topic });
+  if (!cfg.topic) {
+    return { ok: false, httpStatus: null, count: 0, latestMsgId: null, previewTitle: null, previewBody: null, error: "isi topic dulu (A-Z a-z 0-9 _ -)", sseOk: null, sseError: null };
+  }
+  const r = await fetchNtfyCache(cfg);
+  if (!r.ok) {
+    return { ok: false, httpStatus: r.httpStatus, count: 0, latestMsgId: null, previewTitle: null, previewBody: null, error: r.error, sseOk: null, sseError: null };
+  }
+  const last = r.cache.items.length > 0 ? r.cache.items[r.cache.items.length - 1] : null;
+  return {
+    ok: true, httpStatus: r.httpStatus, count: r.cache.count, latestMsgId: r.cache.latestMsgId,
+    previewTitle: last?.title ?? null, previewBody: last?.body.slice(0, 200) || null, error: null,
+    sseOk: null, sseError: null,
+  };
+}
+
+/** Verifikasi subscribe SSE live: buka EventSource sebentar, OK bila `open`.
+ *  Koneksi langsung ditutup lagi; tak pernah throw. */
+export async function testSubscribe(server: string, topic: string, timeoutMs = 10_000): Promise<{ ok: boolean; error: string | null }> {
+  const cfg = normalizeApiWatch({ server, topic });
+  if (!cfg.topic) return { ok: false, error: "isi topic dulu" };
+  if (typeof EventSource === "undefined") return { ok: false, error: "browser tidak dukung EventSource" };
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok: boolean, error: string | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { es?.close(); } catch { /* abaikan */ }
+      resolve({ ok, error });
+    };
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(ntfySseUrl(cfg.server, cfg.topic));
+    } catch {
+      resolve({ ok: false, error: "gagal buka SSE" });
+      return;
+    }
+    const timer = setTimeout(() => finish(false, `timeout ${Math.round(timeoutMs / 1000)} dtk (server/topic tak merespons SSE)`), timeoutMs);
+    es.onopen = () => finish(true, null);
+    es.onerror = () => finish(false, "SSE ditolak/gagal (cek nama topic + server)");
+  });
+}
+
+export interface NtfyHandlers {
+  onItem: (item: ApiWatchItem) => void;
+  onOpen?: () => void;
+  onError?: (msg: string) => void;
+}
+
+/** Subscribe SSE ke topic. Lanjut dari pesan terakhir (since) bila ada agar
+ *  pesan yang terbit saat app mati/putus ikut ke-replay. Kembalikan unsubscribe. */
+export function subscribeNtfy(cfg: ApiWatchConfig, handlers: NtfyHandlers): () => void {
+  if (typeof EventSource === "undefined") {
+    handlers.onError?.("browser tidak dukung EventSource");
+    return () => {};
+  }
+  const url = cfg.lastMsgId
+    ? ntfySseUrl(cfg.server, cfg.topic, cfg.lastMsgId)
+    : ntfySseUrl(cfg.server, cfg.topic);
+  const es = new EventSource(url);
+  let closed = false;
+  es.onopen = () => { if (!closed) handlers.onOpen?.(); };
+  es.onmessage = (ev) => {
+    if (closed) return;
+    try {
+      const item = parseNtfyMessage(JSON.parse((ev as MessageEvent).data as string) as unknown);
+      if (item) handlers.onItem(item);
+    } catch {
+      /* payload rusak dilewat */
+    }
+  };
+  es.onerror = () => { if (!closed) handlers.onError?.("koneksi ntfy terputus (auto-retry)"); };
+  return () => { closed = true; es.close(); };
 }

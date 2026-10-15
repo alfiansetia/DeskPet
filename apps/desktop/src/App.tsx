@@ -31,7 +31,7 @@ import {
 } from "./features/prayer/prayer";
 import { isQuietHours } from "./lib/time";
 import { getCachedWeather, getWeather, weatherGroup, type WeatherNow } from "./features/weather/weather";
-import { fetchPoll, loadApiWatch, saveApiWatch, selectNewItems } from "./features/apiwatch/apiwatch";
+import { APIWATCH_KEY, loadApiWatch, saveApiWatch, subscribeNtfy, type ApiWatchItem } from "./features/apiwatch/apiwatch";
 import { writeAppLog } from "./lib/appLog";
 import { randomGreeting } from "./features/pet/greetings";
 import { newlyUnlocked, validActiveHat } from "./features/pet/hats";
@@ -625,32 +625,19 @@ export default function App() {
     return () => { cancelled = true; clearInterval(fast); clearInterval(slow); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.prayerEnabled, isPrimary, routeOrPresent, settings.prayerCityId, settings.prayerCityName, settings.prayerAdzanEnabled, settings.prayerBubbleEnabled, settings.prayerReminderMins, settings.quietHoursEnabled, settings.quietStart, settings.quietEnd, settings.soundMuted, settings.speechMuted]);
-  // API Watch (opt-in, PRD §5.7 external-read): polling endpoint notifikasi
-  // (mis. Laravel /api/notif-histories/poll?since_id=N). Endpoint & interval
-  // dari setting (tidak di-hardcode). HANYA primary yang fetch (anti-duplikat
-  // multi-window). TIAP putaran dicatat ke file log (metadata saja: url,
-  // since_id, count, id baru — tanpa title/body privat).
+  // API Watch via ntfy (opt-in, PRD §5.7 external-read): listen SSE topic.
+  // Backend cukup POST ke topic itu. HANYA primary yang subscribe
+  // (anti-duplikat multi-window). Tiap pesan dicatat ke file log
+  // (metadata saja: topic, id — tanpa title/body privat).
+  // Reaktif: kalau user mengaktifkan/mengganti topic di panel SETELAH app
+  // dibuka, sync() connect ulang (efek mount-sekali tidak cukup karena
+  // localStorage bukan state React).
   useEffect(() => {
     if (!isPrimary) return;
-    let lastPoll = 0;
-    const doPoll = async () => {
-      const cfg = loadApiWatch();
-      if (!cfg.enabled || !cfg.baseUrl) return;
-      const nowMs = Date.now();
-      if (nowMs - lastPoll < cfg.intervalSecs * 1000) return;
-      lastPoll = nowMs;
-      const stamp = new Date().toISOString();
-      const outcome = await fetchPoll(cfg);
-      if (!outcome.ok) {
-        saveApiWatch({ ...cfg, lastCheckedAt: stamp, lastError: outcome.error ?? "gagal" });
-        void writeAppLog("warn", `apiwatch poll gagal url=${cfg.baseUrl} since_id=${cfg.lastSeenId ?? "-"} err=${outcome.error ?? "?"} http=${outcome.httpStatus ?? "-"}`);
-        return;
-      }
-      const fresh = selectNewItems(outcome.parsed, cfg.lastSeenId);
-      const cursor = outcome.parsed.latestId ?? cfg.lastSeenId;
-      saveApiWatch({ ...cfg, lastSeenId: cursor, lastCheckedAt: stamp, lastError: null });
-      void writeAppLog("info", `apiwatch poll ok url=${cfg.baseUrl} since_id=${cfg.lastSeenId ?? "-"} count=${outcome.parsed.count} baru=${fresh.length} latest=${cursor ?? "-"}`);
+    const handleItems = (fresh: ApiWatchItem[]) => {
       if (fresh.length === 0) return;
+      const stamp = new Date().toISOString();
+      const cfg = loadApiWatch();
       const quiet = settingsRef.current.quietHoursEnabled
         && isQuietHours(new Date(), settingsRef.current.quietStart, settingsRef.current.quietEnd);
       const shown = fresh.slice(0, 5);
@@ -659,7 +646,7 @@ export default function App() {
         routeOrPresent("reminder", it.title, snippet, "bell");
       }
       if (fresh.length > shown.length) {
-        routeOrPresent("reminder", `${fresh.length - shown.length} notif lain`, "Buka tab API Watch untuk detail.", "bell");
+        routeOrPresent("reminder", `${fresh.length - shown.length} notif lain`, "Buka tab ntfy untuk detail.", "bell");
       }
       if (cfg.saveAsReminder) {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta";
@@ -678,16 +665,56 @@ export default function App() {
         speak(`Ada ${fresh.length} notifikasi baru. ${shown[0].title}`, { muted: false });
       }
       store.audit.push({
-        id: uid("api"), actionId: "apiwatch.poll", source: "apiwatch",
+        id: uid("api"), actionId: "apiwatch.ntfy", source: "apiwatch",
         status: "executed", confirmationRequired: false, createdAt: stamp,
       });
       bump();
     };
-    void doPoll();
-    const id = setInterval(() => { void doPoll(); }, 5000);
-    return () => clearInterval(id);
+    let unsub: (() => void) | null = null;
+    let subKey = "";
+    let disposed = false;
+    const sync = () => {
+      if (disposed) return;
+      const cfg = loadApiWatch();
+      const key = cfg.enabled && cfg.topic ? `${cfg.server}/${cfg.topic}` : "";
+      if (key === subKey) return;
+      if (unsub) { unsub(); unsub = null; }
+      subKey = key;
+      if (!key) return;
+      const target = key;
+      unsub = subscribeNtfy(cfg, {
+        onOpen: () => {
+          const c = loadApiWatch();
+          saveApiWatch({ ...c, lastCheckedAt: new Date().toISOString(), lastError: null });
+          void writeAppLog("info", `apiwatch ntfy connected target=${target}`);
+          bump();
+        },
+        onItem: (item) => {
+          const c = loadApiWatch();
+          if (c.lastMsgId === item.key) return; // dedupe reconnect
+          const stamp = new Date().toISOString();
+          saveApiWatch({ ...c, lastMsgId: item.key, lastCheckedAt: stamp, lastError: null });
+          void writeAppLog("info", `apiwatch ntfy msg target=${target} id=${item.key}`);
+          handleItems([item]);
+        },
+        onError: (msg) => {
+          const c = loadApiWatch();
+          saveApiWatch({ ...c, lastCheckedAt: new Date().toISOString(), lastError: msg });
+        },
+      });
+    };
+    sync();
+    const id = setInterval(sync, 5000);
+    const onStorage = (e: StorageEvent) => { if (e.key === APIWATCH_KEY) sync(); };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      disposed = true;
+      clearInterval(id);
+      window.removeEventListener("storage", onStorage);
+      if (unsub) unsub();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPrimary, routeOrPresent, bump]);
+  }, [isPrimary, routeOrPresent]);
   // Timer terpusat multi-window (konsisten dengan scheduler §5.2): state hidup
   // di localStorage sehingga SEMUA window menampilkan countdown yang sama;
   // HANYA primary yang mengeksekusi selesai + merutekan alert ke presenter

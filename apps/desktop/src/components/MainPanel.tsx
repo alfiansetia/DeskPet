@@ -19,8 +19,8 @@ import { HATS, unlockedHats } from "../features/pet/hats";
 import { PrayerView } from "../features/prayer/PrayerView";
 import { AutostartView } from "../features/startup/AutostartView";
 import {
-  buildPollUrl, loadApiWatch, normalizeApiWatch, saveApiWatch, testEndpoint,
-  MIN_INTERVAL_SECS, MAX_INTERVAL_SECS,
+  loadApiWatch, normalizeApiWatch, ntfyPollUrl, ntfySseUrl, saveApiWatch, testNtfy, testSubscribe,
+  DEFAULT_NTFY_SERVER,
   type ApiWatchConfig, type TestOutcome,
 } from "../features/apiwatch/apiwatch";
 
@@ -1087,119 +1087,88 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
   );
 }
 
-/* ---------------- API Watch (polling endpoint notifikasi) ---------------- */
+/* ---------------- API Watch via ntfy (listen topic, bukan polling) ---------------- */
 function ApiWatchView({ rkey }: { rkey: number }) {
   const [cfg, setCfg] = useState<ApiWatchConfig>(() => loadApiWatch());
-  // Ticker di App.tsx menulis cursor (lastSeenId/lastCheckedAt) tiap putaran;
+  // App.tsx menulis lastMsgId/lastCheckedAt tiap pesan masuk;
   // muat ulang saat panel di-refresh agar status terlihat segar.
   useEffect(() => { setCfg(loadApiWatch()); }, [rkey]);
   const [testing, setTesting] = useState(false);
   const [testRes, setTestRes] = useState<TestOutcome | null>(null);
-  const [baselining, setBaselining] = useState(false);
-  const [cursorInput, setCursorInput] = useState("");
   const upd = (patch: Partial<ApiWatchConfig>) => {
     const next = normalizeApiWatch({ ...cfg, ...patch });
     saveApiWatch(next);
     setCfg(next);
   };
-  // Uji endpoint: fetch SEKALI tanpa since_id, tanpa mengubah cursor.
+  // Test topic 2 tahap: (1) cek cache via HTTP, (2) verifikasi subscribe
+  // SSE live benar-benar bisa dibuka. Tanpa mengubah lastMsgId.
   const doTest = async () => {
     setTesting(true);
     setTestRes(null);
     try {
-      setTestRes(await testEndpoint(cfg.baseUrl));
+      const cache = await testNtfy(cfg.server, cfg.topic);
+      if (!cache.ok) {
+        setTestRes(cache);
+        return;
+      }
+      setTestRes({ ...cache, sseOk: null, sseError: "membuka SSE…" });
+      const sse = await testSubscribe(cfg.server, cfg.topic);
+      setTestRes({ ...cache, sseOk: sse.ok, sseError: sse.error });
     } finally {
       setTesting(false);
-    }
-  };
-  // Uji coba: mundurkan/majukan cursor manual (mis. 18 -> 1) agar putaran
-  // berikutnya menganggap data di atasnya sebagai "baru" dan bunyi lagi.
-  const doRewind = () => {
-    const n = Math.floor(Number(cursorInput));
-    if (!Number.isFinite(n) || n < 0) {
-      toast("Cursor tidak valid", "Isi angka id >= 0.", "error");
-      return;
-    }
-    const next = normalizeApiWatch({ ...cfg, lastSeenId: n, lastError: null });
-    saveApiWatch(next);
-    setCfg(next);
-    setCursorInput("");
-    toast("Cursor diubah", `Putaran berikut polling ?since_id=${n}.`, "success");
-  };
-  // Baseline: set cursor = latest_id agar data lama tidak meledak jadi notif.
-  const doBaseline = async () => {
-    setBaselining(true);
-    try {
-      const r = await testEndpoint(cfg.baseUrl);
-      if (r.ok && r.latestId !== null) {
-        const next = normalizeApiWatch({ ...cfg, lastSeenId: r.latestId, lastCheckedAt: new Date().toISOString(), lastError: null });
-        saveApiWatch(next);
-        setCfg(next);
-        toast("Baseline disimpan", `Cursor = ${r.latestId}. Data lama tidak akan bunyi.`, "success");
-      } else {
-        toast("Baseline gagal", r.error ?? "Tidak dapat fetch.", "error");
-      }
-    } finally {
-      setBaselining(false);
     }
   };
   return (
     <div className="dp-settings">
       <div className="dp-muted">
-        <span className="dp-line"><Icon name="activity" size={12} /> Pantau endpoint JSON (mis. Laravel <code>?since_id=</code>) tiap interval. Item baru (id &gt; cursor) jadi bubble + toast + opsional baris Pengingat. Tiap putaran dicatat di file log (tab Log).</span>
+        <span className="dp-line"><Icon name="activity" size={12} /> Listen pesan ntfy (backend cukup POST ke topic). Pesan baru jadi bubble + toast + opsional baris Pengingat. Tiap pesan dicatat di file log (tab Log).</span>
       </div>
       <label className="dp-check">
-        <input type="checkbox" checked={cfg.enabled} onChange={(e) => upd({ enabled: e.target.checked })} /> Aktifkan polling (opt-in)
+        <input type="checkbox" checked={cfg.enabled} onChange={(e) => upd({ enabled: e.target.checked })} /> Aktifkan listen ntfy (opt-in)
       </label>
       <div className="dp-field">
-        <span className="dp-muted">Endpoint (tanpa query since_id — ditambah otomatis; tersimpan di cache lokal)</span>
-        <input className="dp-in" type="url" inputMode="url" placeholder="https://server-anda.id/api/notif-histories/poll"
-          value={cfg.baseUrl} onChange={(e) => upd({ baseUrl: e.target.value })} aria-label="Endpoint API Watch" />
-        {cfg.baseUrl ? (
-          <span className="dp-muted" style={{ fontSize: 12 }}>Polling ke: <code>{buildPollUrl(cfg.baseUrl, cfg.lastSeenId)}</code></span>
+        <span className="dp-muted">Server ntfy (default ntfy.sh; bisa self-host)</span>
+        <input className="dp-in" type="url" inputMode="url" placeholder={DEFAULT_NTFY_SERVER}
+          value={cfg.server} onChange={(e) => upd({ server: e.target.value })} aria-label="Server ntfy" />
+      </div>
+      <div className="dp-field">
+        <span className="dp-muted">Topic (A-Z a-z 0-9 _ - , maks 64 — samakan dengan yang di-POST backend)</span>
+        <input className="dp-in" type="text" inputMode="text" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+          placeholder="contoh-topik"
+          value={cfg.topic} onChange={(e) => upd({ topic: e.target.value })} aria-label="Topic ntfy" />
+        {cfg.topic ? (
+          <span className="dp-muted" style={{ fontSize: 12 }}>Listen ke: <code>{ntfySseUrl(cfg.server, cfg.topic)}</code></span>
         ) : (
-          <span className="dp-muted" style={{ fontSize: 12 }}>Belum ada endpoint — isi dulu di atas, lalu Test + Jadikan baseline.</span>
+          <span className="dp-muted" style={{ fontSize: 12 }}>Belum ada topic — isi dulu di atas, lalu Test.</span>
         )}
       </div>
-      <div className="dp-row" style={{ alignItems: "center" }}>
-        <label htmlFor="dp-apiwatch-interval" style={{ minWidth: 130 }}>Interval (detik)</label>
-        <input id="dp-apiwatch-interval" className="dp-in" type="number" style={{ width: 90 }}
-          min={MIN_INTERVAL_SECS} max={MAX_INTERVAL_SECS} step={15}
-          value={cfg.intervalSecs} onChange={(e) => upd({ intervalSecs: Number(e.target.value) })} />
-        <span className="dp-muted" style={{ fontSize: 12 }}>min {MIN_INTERVAL_SECS} dtk</span>
-      </div>
       <label className="dp-check">
-        <input type="checkbox" checked={cfg.saveAsReminder} onChange={(e) => upd({ saveAsReminder: e.target.checked })} /> Simpan item baru ke tab Pengingat (title + body)
+        <input type="checkbox" checked={cfg.saveAsReminder} onChange={(e) => upd({ saveAsReminder: e.target.checked })} /> Simpan pesan baru ke tab Pengingat (title + body)
       </label>
       <label className="dp-check">
         <input type="checkbox" checked={cfg.speakNew} onChange={(e) => upd({ speakNew: e.target.checked })} /> Bacakan judul via suara (TTS)
       </label>
       <div className="dp-row">
-        <button className="dp-btn sm" onClick={() => void doTest()} disabled={testing || !cfg.baseUrl}>
-          <Icon name="zap" size={13} /> {testing ? "Mengetes…" : "Test endpoint"}
-        </button>
-        <button className="dp-btn sm" onClick={() => void doBaseline()} disabled={baselining || testing || !cfg.baseUrl}>
-          <Icon name="check" size={13} /> {baselining ? "Menyimpan…" : "Jadikan baseline"}
+        <button className="dp-btn sm" onClick={() => void doTest()} disabled={testing || !cfg.topic}>
+          <Icon name="zap" size={13} /> {testing ? "Mengetes…" : "Test subscribe"}
         </button>
       </div>
-      <div className="dp-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-        <label htmlFor="dp-apiwatch-cursor" style={{ minWidth: 130 }}>Cursor uji coba</label>
-        <input id="dp-apiwatch-cursor" className="dp-in" type="number" style={{ flex: "none", width: 130, fontSize: 14 }}
-          min={0}
-          placeholder={String(cfg.lastSeenId ?? 0)}
-          value={cursorInput} onChange={(e) => setCursorInput(e.target.value)} aria-label="Cursor manual" />
-        <button className="dp-btn sm" onClick={doRewind} disabled={!cfg.baseUrl}>
-          <Icon name="history" size={13} /> Set cursor
-        </button>
-        <span className="dp-muted" style={{ fontSize: 12, flexBasis: "100%" }}>mis. cursor 18 → isi 1 lalu polling bunyikan 2–18 lagi</span>
+      <div className="dp-muted" style={{ fontSize: 12 }}>
+        Cara kirim dari backend/terminal: <code>curl -d "halo" {cfg.server || DEFAULT_NTFY_SERVER}/{cfg.topic || "topikmu"}</code>
+        <br />Cache: <code>{cfg.topic ? ntfyPollUrl(cfg.server, cfg.topic) : "-"}</code>
       </div>
       {testRes && (
         <div className="dp-card" data-testid="apiwatch-test-result">
           {testRes.ok ? (
             <>
-              <div><Icon name="checkCircle" size={13} /> OK HTTP {testRes.httpStatus} · count {testRes.count} · latest_id {testRes.latestId ?? "-"}</div>
+              <div><Icon name="checkCircle" size={13} /> OK HTTP {testRes.httpStatus} · cached {testRes.count} · latest {testRes.latestMsgId ?? "-"}</div>
               {testRes.previewTitle && <div style={{ marginTop: 4 }}><b>{testRes.previewTitle}</b></div>}
               {testRes.previewBody && <div className="dp-muted" style={{ whiteSpace: "pre-wrap" }}>{testRes.previewBody}</div>}
+              <div style={{ marginTop: 4 }}>
+                {testRes.sseOk === true && <span><Icon name="checkCircle" size={13} /> Subscribe SSE berhasil — topic ini live.</span>}
+                {testRes.sseOk === false && <span><Icon name="xCircle" size={13} /> Subscribe SSE gagal: {testRes.sseError}</span>}
+                {testRes.sseOk === null && <span className="dp-muted">Subscribe SSE: {testRes.sseError ?? "…"}</span>}
+              </div>
             </>
           ) : (
             <div><Icon name="xCircle" size={13} /> Gagal{testRes.httpStatus ? ` HTTP ${testRes.httpStatus}` : ""}: {testRes.error}</div>
@@ -1207,7 +1176,7 @@ function ApiWatchView({ rkey }: { rkey: number }) {
         </div>
       )}
       <div className="dp-muted" style={{ fontSize: 12 }}>
-        Status: cursor <code>{cfg.lastSeenId ?? "-"}</code> · cek terakhir {cfg.lastCheckedAt ?? "-"}
+        Status: last id <code>{cfg.lastMsgId ?? "-"}</code> · cek terakhir {cfg.lastCheckedAt ?? "-"}
         {cfg.lastError && <span> · error: {cfg.lastError}</span>}
       </div>
     </div>
