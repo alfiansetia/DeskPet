@@ -74,6 +74,25 @@ export function nearestEdge(x: number, y: number, b: WanderBounds): EdgeIndex {
   return best;
 }
 
+/** Proyeksi terdekat (x,y) ke sebuah tepi — titik mentok di tepi itu. */
+export function nearestPointOnEdge(
+  x: number, y: number, b: WanderBounds, edge: EdgeIndex,
+): { x: number; y: number } {
+  switch (edge) {
+    case 0: return { x: clamp(x, b.minX, b.maxX), y: b.minY };
+    case 1: return { x: b.maxX, y: clamp(y, b.minY, b.maxY) };
+    case 2: return { x: clamp(x, b.minX, b.maxX), y: b.maxY };
+    case 3: return { x: b.minX, y: clamp(y, b.minY, b.maxY) };
+  }
+}
+
+/** Rentang segmen tepi dekat sudut bersama untuk langkah keliling.
+ *  step=1 (searah jarum jam): sudut bersama di s=0 sisi target -> [0, 0.5].
+ *  step=3 (mundur/ccw): sudut bersama di s=1 sisi target -> [0.5, 1]. */
+export function edgeStepRange(step: 1 | 3): { sMin: number; sMax: number } {
+  return step === 1 ? { sMin: 0, sMax: 0.5 } : { sMin: 0.5, sMax: 1 };
+}
+
 /** Titik acak di sepanjang tepi (mentok, bounds sudah sprite-aware).
  *  sMin/sMax membatasi segmen tepi (0=ujung awal, 1=ujung akhir searah jarum
  *  jam) — untuk mode keliling, batasi ke setengah dekat sudut bersama agar
@@ -434,15 +453,34 @@ export function useWander({
           // POLA PINGGIR (keliling tepi layar, acak tapi tetap di pinggir):
           // dari tepi terdekat -> titik acak di tepi SEBELAHNYA (searah /
           // berlawanan jarum jam, acak tiap siklus), lalu lanjut ke tepi
-          // sebelahnya lagi. Garis antar tepi bersebelahan memotong sudut —
-          // tetap di periferi, tidak pernah melintas tengah layar.
+          // sebelahnya lagi. Target dibatasi setengah tepi dekat sudut
+          // bersama (s-range) agar garis antar tepi bersebelahan hanya
+          // memotong sudut — tetap di periferi, tidak pernah melintas tengah
+          // layar. Tanpa s-range (full edge), garis dari ujung jauh ke ujung
+          // jauh = diagonal nyeberang tengah (itu bug-nya).
           const b = { minX, maxX, minY, maxY };
+          const isFirstSync = edgeRef.current === null;
           const cur = edgeRef.current ?? nearestEdge(pos.x, pos.y, b);
           const step: 1 | 3 = Math.random() < 0.5 ? 1 : 3; // 1=searah, 3=mundur (= -1 mod 4)
           const next1 = ((cur + step) % 4) as EdgeIndex;
           const next2 = ((next1 + step) % 4) as EdgeIndex;
-          const t1 = randomPointOnEdge(next1, b);
-          const t2 = randomPointOnEdge(next2, b);
+          const { sMin, sMax } = edgeStepRange(step);
+          // Sinkron awal: posisi bisa di tengah layar (mis. habis alert yang
+          // centerPet, atau baru ganti setting). Mampir dulu ke titik
+          // terdekat di tepi saat ini (jalur tegak lurus terpendek), baru
+          // mulai keliling — tanpa ini leg pertama diagonal dari tengah ke
+          // tepi sebelah = nyeberang tengah.
+          if (isFirstSync) {
+            const sync = nearestPointOnEdge(pos.x, pos.y, b, cur);
+            legs.push({
+              targetX: sync.x,
+              targetY: sync.y,
+              pace: resolvePace(pacePref),
+              pauseAfterMs: rand(300, 500),
+            });
+          }
+          const t1 = randomPointOnEdge(next1, b, sMin, sMax);
+          const t2 = randomPointOnEdge(next2, b, sMin, sMax);
           legs.push({
             targetX: t1.x,
             targetY: t1.y,

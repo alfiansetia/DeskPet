@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { clamp, nearestEdge, previewBounds, randomPointOnEdge, shouldCenterPet, sideOf, spritePads, tauriBounds, useWander, type EdgeIndex } from "./useWander";
+import { clamp, edgeStepRange, nearestEdge, nearestPointOnEdge, previewBounds, randomPointOnEdge, shouldCenterPet, sideOf, spritePads, tauriBounds, useWander, type EdgeIndex } from "./useWander";
 
 describe("wander bounds (mentok tepi)", () => {
   it("clamp membatasi nilai ke rentang", () => {
@@ -140,6 +140,48 @@ describe("edges mode (keliling tepi layar)", () => {
       const mid = { x: (from.x + t.x) / 2, y: (from.y + t.y) / 2 };
       expect(mid.x).toBeGreaterThanOrEqual(500);
       expect(mid.y).toBeLessThanOrEqual(125);
+    }
+  });
+
+  it("nearestPointOnEdge: proyeksi mentok ke tepinya", () => {
+    expect(nearestPointOnEdge(500, 250, b, 0)).toEqual({ x: 500, y: 0 });
+    expect(nearestPointOnEdge(500, 250, b, 1)).toEqual({ x: 1000, y: 250 });
+    expect(nearestPointOnEdge(500, 250, b, 2)).toEqual({ x: 500, y: 500 });
+    expect(nearestPointOnEdge(500, 250, b, 3)).toEqual({ x: 0, y: 250 });
+    // di-clamp bila di luar bounds
+    expect(nearestPointOnEdge(9999, 9999, b, 0)).toEqual({ x: 1000, y: 0 });
+  });
+
+  it("edgeStepRange: searah=[0,0.5], mundur=[0.5,1]", () => {
+    expect(edgeStepRange(1)).toEqual({ sMin: 0, sMax: 0.5 });
+    expect(edgeStepRange(3)).toEqual({ sMin: 0.5, sMax: 1 });
+  });
+
+  it("kaki s-range steady-state tidak pernah masuk kotak tengah", () => {
+    // Kotak tengah = sepertiga tengah layar. Kaki keliling antar tepi
+    // bersebelahan dengan s-range harus selalu di periferi.
+    const cx0 = 1000 / 3, cx1 = (1000 * 2) / 3, cy0 = 500 / 3, cy1 = (500 * 2) / 3;
+    const hitsCenter = (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
+      for (let i = 0; i <= 20; i++) {
+        const x = p1.x + ((p2.x - p1.x) * i) / 20;
+        const y = p1.y + ((p2.y - p1.y) * i) / 20;
+        if (x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1) return true;
+      }
+      return false;
+    };
+    for (let cur = 0; cur < 4; cur++) {
+      for (const step of [1, 3] as const) {
+        const next1 = ((cur + step) % 4) as EdgeIndex;
+        const next2 = ((next1 + step) % 4) as EdgeIndex;
+        const { sMin, sMax } = edgeStepRange(step);
+        for (let i = 0; i < 25; i++) {
+          const pos = randomPointOnEdge(cur as EdgeIndex, b);
+          const t1 = randomPointOnEdge(next1, b, sMin, sMax);
+          const t2 = randomPointOnEdge(next2, b, sMin, sMax);
+          expect(hitsCenter(pos, t1)).toBe(false);
+          expect(hitsCenter(t1, t2)).toBe(false);
+        }
+      }
     }
   });
 });
