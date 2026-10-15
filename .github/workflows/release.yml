@@ -66,6 +66,9 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
+      - name: Build frontend dulu (cargo/tauri butuh dist/)
+        run: npm run build
+
       - name: Run tests (gate rilis)
         run: npm run test:all
 
