@@ -127,7 +127,7 @@ export interface DeskSettings {
 
 export const DEFAULT_SETTINGS: DeskSettings = {
   alwaysOnTop: true, reducedMotion: false,
-  soundMuted: false, speechMuted: false,
+  soundMuted: false, speechMuted: true, // TTS default MATI (opt-in via checkbox; bunyi efek tetap on)
   wanderEnabled: true,
   wanderPace: "random",
   wanderDirection: "random",

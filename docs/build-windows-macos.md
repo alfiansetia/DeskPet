@@ -1,39 +1,78 @@
-# Build — Windows & macOS (P1)
+# Build & run — Windows & macOS
 
-## Prereqs
+## Prasyarat
 
-- Rust stable (≥1.77, tested 1.99) + Tauri 2 system deps
-  - Windows: WebView2 (preinstalled on Win10/11), Visual Studio Build Tools (MSVC)
-  - macOS: Xcode CLT (`xcode-select --install`), Rust `aarch64-apple-darwin` / `x86_64-apple-darwin` targets
-- Node 20+ / npm 10+
+- Node.js 20+ / npm 10+ (`node -v`, `npm -v`).
+- Rust stable ≥ 1.77 (`rustc -V`), diuji hingga 1.99.
+- Windows 10/11 (min `10.0.17763.0`): Visual Studio C++ Build Tools (MSVC) +
+  WebView2 (sudah bawaan di Win 10/11).
+- macOS 11+ (`macOS.minimumSystemVersion 11.0`): Xcode CLT
+  (`xcode-select --install`) + target
+  `aarch64-apple-darwin` / `x86_64-apple-darwin`.
 
-## Dev
+## Dev (aplikasi native penuh)
 
-```sh
+```bash
 cd apps/desktop
 npm install
 npm run tauri dev
 ```
 
-Transparent pet window (220×220) appears; tray icon with Show/Hide/Toggle-top/Quit.
+Yang terjadi: window pet transparan muncul; ikon tray aktif (Show/Hide/
+Toggle-top/Quit); SQLite diinisialisasi di `<app_local_data>/deskpet.db`.
 
-## Production bundles
+## Preview web cepat (tanpa compile Rust)
 
-```sh
+```bash
+cd apps/desktop
+npm run dev
+# buka http://localhost:1420 — badge "web-preview"
+```
+
+Keterbatasan preview: tanpa multi-window, tray, SQLite file, autostart.
+Jangan klaim fitur native lolos uji hanya dari preview.
+
+> Catatan Windows: `vite.config.ts` mengabaikan `src-tauri/target/**` di
+> `server.watch`, kalau tidak Vite crash `EBUSY ... build_script_build-*.exe`
+> saat `tauri dev`. Jalankan tes Rust dari `apps/desktop/src-tauri`
+> (`cargo test`), bukan dari `apps/desktop`.
+
+## Bundle produksi
+
+```bash
 cd apps/desktop
 npm run tauri build
 ```
 
-| OS | Output | Notes |
-|---|---|---|
-| Windows 10/11 (min `10.0.17763.0`) | `src-tauri/target/release/bundle/{msi,nsis}/` | WebView2 required on target |
-| macOS 11+ (`macOS.minimumSystemVersion 11.0`) | `.../bundle/{dmg,app}/` | Sign/notarize before distribution (P5) |
+| OS | Output | Catatan |
+| --- | --- | --- |
+| Windows 10/11 | `src-tauri/target/release/bundle/{msi,nsis}/` | Butuh WebView2 di target |
+| macOS 11+ | `src-tauri/target/release/bundle/{dmg,app}/` | Wajib sign + notarize sebelum distribusi publik (P5) |
 
-Frontend-only preview (no Rust): `npm run dev` → `http://localhost:1420`, badge shows `web-preview`.
+Deskripsi bundle: "Local-first desktop companion". Target aktif:
+`msi, nsis, dmg, app`. Kategori: Utility.
 
-## Smoke test
+## Update channel
 
-1. Pet renders, idle bob animation.
-2. Drag moves window; state shows `dragged` while pressed.
-3. Hide button/tray/left-click toggles; `Ctrl/Cmd+Shift+D` toggles.
-4. Restart keeps nothing critical yet (P2 adds reminder persistence UX); DB file created at `<app_local_data>/deskpet.db`.
+`features/updater` membaca [`updates/stable.json`](../updates/stable.json)
+(`version`, `notes`, `url` rilis GitHub). Naikkan versi + catat di
+`CHANGELOG.md` setiap rilis.
+
+## Signing / notarization (wajib sebelum rilis publik)
+
+- Windows: code-signing cert untuk MSI/NSIS (kalau tidak, SmartScreen
+  memberi peringatan — jelaskan ke user, jangan disembunyikan).
+- macOS: Developer ID + `notarization` untuk DMG/APP (kalau tidak, Gatekeeper
+  memblokir — sediakan instruksi bypass resmi yang aman).
+- Publikasikan checksum per artefak (lihat PRD §16).
+
+## Smoke test (wajib tiap OS target)
+
+1. Pet tampil, animasi idle.
+2. Drag memindah window; state `dragged` saat ditekan; lepas → `idle`.
+3. Hide via menu/tray/`Ctrl/Cmd+Shift+D`; tampil kembali.
+4. Klik = sapa; tahan = elus; dobel-klik = Asisten; klik kanan = menu.
+5. Buka tiap tab panel; tambah 1 pengingat/tugas/catatan/timer.
+6. Restart app: data tetap ada; window sekunder kembali (multi-pet).
+7. Matikan network: fitur inti jalan; pill sholat/cuaca label "offline".
+8. Multi-monitor/DPI/sleep-wake: pindah layar, ubah skala, sleep lalu bangun.

@@ -6,6 +6,7 @@ import {
   normalizeCompanionList,
   phaseDelayMsFor,
   resolvePresenterFor,
+  resolveWanderFor,
   slotPeriodJitterMsFor,
   slotPhaseFor,
   spawnCompanionWindow,
@@ -75,6 +76,42 @@ describe("companions model (multi-pet B)", () => {
     expect(normalizeCompanion({ id: "c_x2", species: "cat", shy: true }).shy).toBe(true);
     // nilai korup -> jinak
     expect(normalizeCompanion({ id: "c_x3", species: "cat", shy: "yes" }).shy).toBe(false);
+  });
+
+  it("gaya jalan per karakter: undefined = ikuti global (data lama aman)", () => {
+    const plain = normalizeCompanion({ id: "c_x1", species: "cat" });
+    expect(plain.wanderEnabled).toBeUndefined();
+    expect(plain.wanderPace).toBeUndefined();
+    expect(plain.wanderDirection).toBeUndefined();
+    const custom = normalizeCompanion({
+      id: "c_x2", species: "cat", wanderEnabled: false, wanderPace: "fast", wanderDirection: "edges",
+    });
+    expect(custom.wanderEnabled).toBe(false);
+    expect(custom.wanderPace).toBe("fast");
+    expect(custom.wanderDirection).toBe("edges");
+    // nilai korup -> undefined (fallback global), bukan default konkret
+    const bad = normalizeCompanion({
+      id: "c_x3", species: "cat", wanderEnabled: "ya", wanderPace: "ngebut", wanderDirection: 42,
+    });
+    expect(bad.wanderEnabled).toBeUndefined();
+    expect(bad.wanderPace).toBeUndefined();
+    expect(bad.wanderDirection).toBeUndefined();
+  });
+
+  it("resolveWanderFor: override pet menang, lalu global", () => {
+    const g = { wanderEnabled: true, wanderPace: "slow" as const, wanderDirection: "edges" as const };
+    // tanpa override -> global mentah-mentah
+    expect(resolveWanderFor(undefined, g)).toEqual({ enabled: true, pace: "slow", direction: "edges" });
+    expect(resolveWanderFor(normalizeCompanion({ id: "c_x1", species: "cat" }), g))
+      .toEqual({ enabled: true, pace: "slow", direction: "edges" });
+    // override sebagian: yang diisi menang, sisanya global
+    const c = normalizeCompanion({ id: "c_x2", species: "cat", wanderPace: "fast" });
+    expect(resolveWanderFor(c, g)).toEqual({ enabled: true, pace: "fast", direction: "edges" });
+    const off = normalizeCompanion({ id: "c_x3", species: "cat", wanderEnabled: false });
+    expect(resolveWanderFor(off, g).enabled).toBe(false);
+    // global tak lengkap -> default random
+    expect(resolveWanderFor(undefined, { wanderEnabled: false } as never))
+      .toEqual({ enabled: false, pace: "random", direction: "random" });
   });
 
   it("slot rotation desyncs per companion", () => {

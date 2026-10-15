@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { clamp, edgeStepRange, fleeTargetFor, nearestEdge, nearestPointOnEdge, previewBounds, randomPointOnEdge, shouldCenterPet, sideOf, spritePads, tauriBounds, useWander, type EdgeIndex } from "./useWander";
+import { clamp, edgeStepRange, fleeTargetFor, nearestEdge, nearestPointOnEdge, needsEdgeResync, previewBounds, randomPointOnEdge, shouldCenterPet, sideOf, spritePads, tauriBounds, useWander, type EdgeIndex } from "./useWander";
 
 describe("wander bounds (mentok tepi)", () => {
   it("clamp membatasi nilai ke rentang", () => {
@@ -155,6 +155,40 @@ describe("edges mode (keliling tepi layar)", () => {
   it("edgeStepRange: searah=[0,0.5], mundur=[0.5,1]", () => {
     expect(edgeStepRange(1)).toEqual({ sMin: 0, sMax: 0.5 });
     expect(edgeStepRange(3)).toEqual({ sMin: 0.5, sMax: 1 });
+  });
+
+  it("needsEdgeResync: acuan basi / posisi lepas wajib sync", () => {
+    // Awal (acuan null) -> sync ke tepi terdekat.
+    expect(needsEdgeResync({ x: 500, y: 250 }, b, null)).toEqual({ cur: 0, sync: true });
+    // Nempel tepi + acuan benar -> jalan terus, tanpa sync.
+    expect(needsEdgeResync({ x: 500, y: 0 }, b, 0)).toEqual({ cur: 0, sync: false });
+    expect(needsEdgeResync({ x: 1000, y: 100 }, b, 1)).toEqual({ cur: 1, sync: false });
+    // Di tengah layar walau acuan "benar" -> sync (habis centerPet/interupsi).
+    expect(needsEdgeResync({ x: 500, y: 250 }, b, 0)).toEqual({ cur: 0, sync: true });
+    // Habis drag ke tengah: acuan menunjuk tepi lama -> sync ke tepi terdekat posisi nyata.
+    expect(needsEdgeResync({ x: 500, y: 250 }, b, 2)).toEqual({ cur: 0, sync: true });
+    expect(needsEdgeResync({ x: 50, y: 450 }, b, 0)).toEqual({ cur: 2, sync: true }); // seri kiri/bawah -> bawah (urutan cek)
+  });
+
+  it("kaki sync = jalur tegak lurus terpendek ke tepi (bukan diagonal ke sudut)", () => {
+    // Bentuk bug: posisi tengah + acuan basi -> kaki langsung ke titik
+    // s-range di tepi sebelah = diagonal nyeberang tengah. Perbaikan: kaki
+    // pertama wajib ke titik terdekat di tepi terdekat (jarak minimum).
+    const pos = { x: 500, y: 250 }; // tengah layar (habis centerPet)
+    const stale = 2 as EdgeIndex; // acuan basi: bawah
+    const r = needsEdgeResync(pos, b, stale);
+    expect(r.sync).toBe(true);
+    const syncPt = nearestPointOnEdge(pos.x, pos.y, b, r.cur);
+    const len = Math.hypot(syncPt.x - pos.x, syncPt.y - pos.y);
+    const minAll = Math.min(...([0, 1, 2, 3] as EdgeIndex[]).map((e) => {
+      const p = nearestPointOnEdge(pos.x, pos.y, b, e);
+      return Math.hypot(p.x - pos.x, p.y - pos.y);
+    }));
+    expect(len).toBe(minAll);
+    // Target sync selalu nempel di perimeter (di salah satu tepi).
+    const onPerimeter =
+      syncPt.x === b.minX || syncPt.x === b.maxX || syncPt.y === b.minY || syncPt.y === b.maxY;
+    expect(onPerimeter).toBe(true);
   });
 
   it("kaki s-range steady-state tidak pernah masuk kotak tengah", () => {

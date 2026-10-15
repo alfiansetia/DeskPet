@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
-import { parseCommand, validateAction, type ActionRequest } from "../features/assistant/parser";
+import { parseCommand, runNotesSearch, runTasksQuery, validateAction, type ActionRequest } from "../features/assistant/parser";
 import { addCompanion, loadCompanions, normalizeCreatedBy, removeCompanion, saveCompanions, updateCompanion, exportBackup, importBackup, loadSettings, saveSettings, store, uid, MAIN_COMPANION_ID, MAX_COMPANIONS, type Automation, type CalEvent, type Companion, type DeskSettings, type Note, type RecurrenceRule, type Reminder, type Todo, type WanderPace, type WanderDirection } from "../lib/store";
-import { COMPANION_ROLES, defaultNameFor, normalizeCompanionList, spawnCompanionWindow, type CompanionRole } from "../features/pet/companions";
-import { getAppLogPath, readAppLog, revealAppLog } from "../lib/appLog";
+import { COMPANION_ROLES, defaultNameFor, normalizeCompanionList, resolveWanderFor, spawnCompanionWindow, type CompanionRole } from "../features/pet/companions";
+import { clearAppLog, getAppLogPath, readAppLog, revealAppLog } from "../lib/appLog";
 import { formatDue, isQuietHours, nextOccurrence, parseDurationSeconds, parseNaturalDateTime, toUTCISOString } from "../lib/time";
 import { subscribeDataChanged } from "../lib/sharedData";
 import { buildMonthGrid, groupByDay, monthLabel, WEEKDAYS_ID, ymdLocal } from "../features/calendar/calendar";
@@ -58,12 +58,14 @@ const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
   { id: "log", icon: "history", title: "Log" },
 ];
 
-/** Kelompok tab agar 11 item bisa di-scan tanpa scroll horizontal.
- *  Kerja = bikin/ingat, Waktu = berbasis jam, Sistem = app-nya sendiri. */
+/** Kelompok tab agar 12 item bisa di-scan tanpa scroll horizontal.
+ *  Kerja = bikin/ingat, Waktu = berbasis jam, Karakter = pet & kawan,
+ *  Sistem = app-nya sendiri. */
 const TAB_GROUPS: { id: string; label: string; tabs: PanelTab[] }[] = [
   { id: "kerja", label: "Kerja", tabs: ["assistant", "reminders", "tasks", "notes"] },
   { id: "waktu", label: "Waktu", tabs: ["timer", "calendar", "prayer", "auto", "apiwatch"] },
-  { id: "sistem", label: "Sistem", tabs: ["companions", "settings", "about", "log"] },
+  { id: "karakter", label: "Karakter", tabs: ["settings", "companions"] },
+  { id: "sistem", label: "Sistem", tabs: ["about", "log"] },
 ];
 
 const TAB_BY_ID = new Map<PanelTab, { id: PanelTab; icon: IconName; title: string }>(
@@ -133,7 +135,7 @@ export function MainPanel(p: Props) {
         {p.tab === "apiwatch" && <ApiWatchView rkey={p.refreshKey} />}
         {p.tab === "companions" && <CompanionsView companions={companions} setCompanions={setCompanions} />}
         {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} onCare={p.onCare} companions={companions} setCompanions={setCompanions} ownId={p.ownId} />}
-        {p.tab === "about" && <AboutView bump={p.bump} />}
+        {p.tab === "about" && <AboutView bump={p.bump} settings={p.settings} setSettings={p.setSettings} />}
         {p.tab === "log" && <LogView />}
       </div>
     </div>
@@ -146,7 +148,14 @@ function Assistant({ onAction, timerStart, ownId }: { onAction: () => void; time
   const [last, setLast] = useState<{ preview: string; needsConfirm: boolean; action: ActionRequest } | null>(null);
   const [log, setLog] = useState<string[]>([]);
 
-  const run = (confirm = false) => {
+  const commit = async (action: ActionRequest, confirmed: boolean, preview: string, needsConfirm: boolean) => {
+    const result = await execute(action, timerStart, ownId);
+    store.audit.push({ id: uid("a"), actionId: actionId(action), source: "assistant", status: confirmed ? "confirmed" : "executed", confirmationRequired: needsConfirm, createdAt: new Date().toISOString() });
+    setLog((l) => [...(result ? [result] : []), `OK: ${preview}`, ...l].slice(0, 8));
+    setLast(null); setQ(""); onAction();
+  };
+
+  const run = async (confirm = false) => {
     const parsed = parseCommand(q);
     const v = parsed.action.type === "unknown" ? { ok: false as const, error: parsed.preview } : validateAction(parsed.action);
     if (!v.ok) {
@@ -160,25 +169,22 @@ function Assistant({ onAction, timerStart, ownId }: { onAction: () => void; time
       store.audit.push({ id: uid("a"), actionId: actionId(parsed.action), source: "assistant", status: "previewed", confirmationRequired: true, createdAt: new Date().toISOString() });
       return;
     }
-    execute(parsed.action, timerStart, ownId);
-    store.audit.push({ id: uid("a"), actionId: actionId(parsed.action), source: "assistant", status: confirm ? "confirmed" : "executed", confirmationRequired: parsed.needsConfirm, createdAt: new Date().toISOString() });
-    setLog((l) => [`OK: ${parsed.preview}`, ...l].slice(0, 8));
-    setLast(null); setQ(""); onAction();
+    await commit(parsed.action, confirm, parsed.preview, parsed.needsConfirm);
   };
 
   return (
     <div>
-      <p className="dp-muted">Proses lokal 100% · tanpa cloud kecuali opt-in. Contoh: “ingatkan deploy jam 4 sore”, “tambah beli susu ke tugas”, “timer 25 menit”.</p>
+      <p className="dp-muted">Proses lokal 100% · tanpa cloud kecuali opt-in. Contoh: “ingatkan deploy jam 4 sore”, “tambah beli susu ke tugas”, “selesaikan tugas beli susu”, “tunda pengingat rapat 10 menit”, “cari catatan belanja”, “tugas menumpuk”, “timer 25 menit”.</p>
       <div className="dp-row">
         <input className="dp-in" value={q} onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") run(); }}
+          onKeyDown={(e) => { if (e.key === "Enter") void run(); }}
           placeholder="Ketik perintah…" aria-label="Perintah natural" />
-        <button className="dp-btn" onClick={() => run()}>Jalan</button>
+        <button className="dp-btn" onClick={() => void run()}>Jalan</button>
       </div>
       {last?.needsConfirm && (
         <div className="dp-confirm">
           <div>{last.preview}</div>
-          <div className="dp-row"><button className="dp-btn primary" onClick={() => { execute(last.action, timerStart, ownId); setLast(null); setQ(""); onAction(); }}>Konfirmasi</button>
+          <div className="dp-row"><button className="dp-btn primary" onClick={() => { void commit(last.action, true, last.preview, last.needsConfirm); }}>Konfirmasi</button>
           <button className="dp-btn" onClick={() => setLast(null)}>Batal</button></div>
         </div>
       )}
@@ -192,7 +198,7 @@ function actionId(a: ActionRequest): string {
   return a.type === "unknown" ? "unknown" : a.type;
 }
 
-export function execute(a: ActionRequest, timerStart: (s: number, l?: string) => void, ownId?: string): void {
+export async function execute(a: ActionRequest, timerStart: (s: number, l?: string) => void, ownId?: string): Promise<string | null> {
   const t = new Date().toISOString();
   // Single shared DB: createdBy hanya info display, bukan kepemilikan.
   const createdBy = normalizeCreatedBy(ownId);
@@ -201,23 +207,86 @@ export function execute(a: ActionRequest, timerStart: (s: number, l?: string) =>
     all.unshift({ id: uid("r"), title: a.title, dueAt: a.dueAt, timezone: a.timezone, recurrence: "none", status: "active", createdAt: t, updatedAt: t, createdBy });
     store.reminders.save(all);
     toast("Pengingat dibuat", a.title, "success");
+    return null;
+  } else if (a.type === "reminder.snooze") {
+    const all = store.reminders.all();
+    const found = all.some((r) => r.id === a.reminderId);
+    if (!found) return "Pengingatnya sudah tidak ada (mungkin sudah dihapus).";
+    store.reminders.save(all.map((r) => (r.id === a.reminderId ? { ...r, snoozeUntil: a.snoozeUntil, updatedAt: t } : r)));
+    toast("Pengingat ditunda", `${a.title} → ${formatDue(a.snoozeUntil)}`, "success");
+    return null;
   } else if (a.type === "todo.create") {
     const all = store.todos.all();
     all.unshift({ id: uid("t"), title: a.title, status: "open", priority: 0, dueAt: a.dueAt ?? null, createdAt: t, updatedAt: t, createdBy });
     store.todos.save(all);
     toast("Tugas ditambah", a.title, "success");
+    return null;
+  } else if (a.type === "todo.complete") {
+    const all = store.todos.all();
+    if (!all.some((x) => x.id === a.todoId)) return "Tugasnya sudah tidak ada (mungkin sudah dihapus).";
+    store.todos.save(all.map((x) => (x.id === a.todoId ? { ...x, status: "completed", completedAt: t, updatedAt: t } : x)));
+    toast("Tugas selesai", a.title, "success");
+    return null;
+  } else if (a.type === "todo.delete") {
+    const all = store.todos.all();
+    if (!all.some((x) => x.id === a.todoId)) return "Tugasnya sudah tidak ada.";
+    store.todos.save(all.filter((x) => x.id !== a.todoId));
+    toast("Tugas dihapus permanen", a.title, "info");
+    return null;
   } else if (a.type === "note.create") {
     const all = store.notes.all();
     all.unshift({ id: uid("n"), title: a.title, content: a.content, createdAt: t, updatedAt: t, createdBy });
     store.notes.save(all);
     toast("Catatan dibuat", a.title, "success");
+    return null;
+  } else if (a.type === "note.delete") {
+    const all = store.notes.all();
+    if (!all.some((n) => n.id === a.noteId)) return "Catatannya sudah tidak ada.";
+    store.notes.save(all.map((n) => (n.id === a.noteId ? { ...n, deletedAt: t, updatedAt: t } : n)));
+    toast("Catatan diarsipkan", a.title, "info");
+    return null;
+  } else if (a.type === "notes.search") {
+    return runNotesSearch(store.notes.all(), a.keyword);
+  } else if (a.type === "tasks.query") {
+    return runTasksQuery(store.todos.all(), a.scope, a.keyword);
   } else if (a.type === "timer.start") {
     timerStart(a.durationSeconds, a.label);
+    return null;
+  } else if (a.type === "ntfy.send") {
+    return sendNtfy(a.topic, a.title, a.message);
   } else if (a.type === "calendar.create") {
     const all = store.events.all();
     all.unshift({ id: uid("e"), title: a.title, startAt: a.startAt, endAt: a.endAt, source: "local", createdAt: t, createdBy });
     store.events.save(all);
     toast("Acara dibuat", a.title, "success");
+    return null;
+  }
+  return null;
+}
+
+/** Kirim push ke topik ntfy (satu-satunya aksi asisten yang network).
+ *  Header Title wajib latin-1 (fetch menolak non-latin1) -> sanitasi.
+ *  Tak pernah throw; gagal network -> string error untuk log asisten. */
+async function sendNtfy(topic: string, title: string, message: string): Promise<string> {
+  const cfg = loadApiWatch();
+  const url = `${cfg.server}/${topic}`;
+  const safeTitle = title.replace(/[^\x20-\x7E]/g, "?").slice(0, 200) || topic;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12_000);
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { Title: safeTitle },
+      body: message,
+      signal: ctrl.signal,
+    });
+    if (!r.ok) return `Gagal kirim notif: HTTP ${r.status}.`;
+    toast("Notif terkirim", `Topik ${topic}.`, "success");
+    return `Terkirim ke topik ${topic}.`;
+  } catch {
+    return "Gagal kirim notif: network offline/gagal.";
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -906,27 +975,29 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
       void Promise.resolve(emit("deskpet://companions-changed", "changed")).catch(() => { /* preview */ });
     } catch { /* preview */ }
   };
+  // Gaya jalan efektif pet window ini (override per karakter, fallback global).
+  const walk = resolveWanderFor(target, settings);
 
   return (
     <div className="dp-settings">
       <details className="dp-acc" open>
-        <summary className="dp-acc-head">Gerak &amp; perilaku</summary>
+        <summary className="dp-acc-head">Gerak &amp; perilaku (pet ini)</summary>
         <div className="dp-acc-body">
-      <label className="dp-check"><input type="checkbox" checked={settings.wanderEnabled} onChange={(e) => upd({ wanderEnabled: e.target.checked })} /> Jalan otomatis (walk)</label>
+      <div className="dp-muted" style={{ fontSize: 12 }}>Tiap pet punya gaya jalan sendiri. Karakter baru mengikuti default global.</div>
+      <label className="dp-check"><input type="checkbox" checked={walk.enabled} onChange={(e) => syncTarget({ wanderEnabled: e.target.checked })} /> Jalan otomatis (walk){target?.wanderEnabled === undefined && <span className="dp-muted"> · global</span>}</label>
       <label className="dp-check"><input type="checkbox" checked={settings.centerOnAlert !== false} onChange={(e) => upd({ centerOnAlert: e.target.checked })} /> Kembali ke tengah layar saat alert penting</label>
-      <AutostartView settings={settings} upd={upd} />
-      {settings.wanderEnabled && (
+      {walk.enabled && (
         <div style={{ marginLeft: 22, marginTop: -2, marginBottom: 8, display: "flex", flexDirection: "column", gap: 6 }}>
           <div className="dp-row" style={{ alignItems: "center", margin: 0 }}>
             <label htmlFor="dp-wander-pace" style={{ minWidth: 90, fontSize: 12 }} className="dp-muted">
-              Kecepatan:
+              Kecepatan:{target?.wanderPace === undefined && " (global)"}
             </label>
             <select
               id="dp-wander-pace"
               className="dp-in"
               style={{ padding: "4px 8px", fontSize: 12 }}
-              value={settings.wanderPace ?? "random"}
-              onChange={(e) => upd({ wanderPace: e.target.value as WanderPace })}
+              value={walk.pace}
+              onChange={(e) => syncTarget({ wanderPace: e.target.value as WanderPace })}
             >
               <option value="random">Acak (Lari / Santai)</option>
               <option value="slow">Santai / Pelan Saja</option>
@@ -936,14 +1007,14 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
           </div>
           <div className="dp-row" style={{ alignItems: "center", margin: 0 }}>
             <label htmlFor="dp-wander-dir" style={{ minWidth: 90, fontSize: 12 }} className="dp-muted">
-              Arah jelajah:
+              Arah jelajah:{target?.wanderDirection === undefined && " (global)"}
             </label>
             <select
               id="dp-wander-dir"
               className="dp-in"
               style={{ padding: "4px 8px", fontSize: 12 }}
-              value={settings.wanderDirection ?? "random"}
-              onChange={(e) => upd({ wanderDirection: e.target.value as WanderDirection })}
+              value={walk.direction}
+              onChange={(e) => syncTarget({ wanderDirection: e.target.value as WanderDirection })}
             >
               <option value="random">Acak (Semua Arah)</option>
               <option value="horizontal">Kiri – Kanan (Patroli)</option>
@@ -1068,18 +1139,51 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
 }
 
 /* ---------------- Tentang: app + backup/restore + cek update ---------------- */
-function AboutView({ bump }: { bump: () => void }) {
+function AboutView({ bump, settings, setSettings }: { bump: () => void; settings: DeskSettings; setSettings: (s: DeskSettings) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [checking, setChecking] = useState(false);
   const [updRes, setUpdRes] = useState<UpdateStatus | null>(null);
+  const [lastBackupPath, setLastBackupPath] = useState<string | null>(null);
+  const upd = (patch: Partial<DeskSettings>) => {
+    const next = { ...settings, ...patch, telemetryEnabled: false as const };
+    saveSettings(next); setSettings(next);
+  };
 
-  const doExport = () => {
-    const blob = new Blob([exportBackup()], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `deskpet-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
-    URL.revokeObjectURL(url);
-    toast("Backup diunduh", "Simpan file JSON di tempat aman.", "success");
+  const doExport = async () => {
+    const json = exportBackup();
+    // Desktop: tulis via backend ke folder Dokumen/DeskPet (path jelas).
+    try {
+      const path = await invoke<string>("backup_export", { json });
+      setLastBackupPath(path);
+      toast("Backup tersimpan", path, "success");
+      return;
+    } catch { /* preview/web -> fallback unduhan browser */ }
+    try {
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `deskpet-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast("Backup diunduh", "Cek folder Download browser.", "success");
+    } catch {
+      toast("Backup gagal", "Tidak bisa menulis file di mode ini.", "error");
+    }
+  };
+  const openBackupFolder = async () => {
+    if (!lastBackupPath) return;
+    try {
+      const mod = await import("@tauri-apps/plugin-opener").catch(() => null);
+      const reveal = (mod as { revealItemInDir?: (p: string) => Promise<void> } | null)?.revealItemInDir;
+      if (!reveal) throw new Error("no opener");
+      await reveal(lastBackupPath);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(lastBackupPath);
+        toast("Path disalin", lastBackupPath, "success");
+      } catch {
+        toast("Lokasi backup", lastBackupPath, "info");
+      }
+    }
   };
   const doImport = async (f: File) => {
     const txt = await f.text();
@@ -1122,11 +1226,23 @@ function AboutView({ bump }: { bump: () => void }) {
       <div className="dp-field">
         <span className="dp-muted">Backup &amp; restore (file JSON di perangkatmu, tanpa cloud)</span>
         <div className="dp-row">
-          <button className="dp-btn sm" onClick={doExport}><Icon name="download" size={13} /> Backup</button>
+          <button className="dp-btn sm" onClick={() => void doExport()}><Icon name="download" size={13} /> Backup</button>
           <button className="dp-btn sm" onClick={() => fileRef.current?.click()}><Icon name="upload" size={13} /> Restore</button>
           <input ref={fileRef} type="file" accept="application/json" hidden
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); e.target.value = ""; }} aria-label="Pilih file backup" />
         </div>
+        {lastBackupPath && (
+          <div className="dp-row" style={{ alignItems: "center" }}>
+            <span className="dp-muted" style={{ fontSize: 12, wordBreak: "break-all" }}>{lastBackupPath}</span>
+            <button className="dp-btn sm" onClick={() => void openBackupFolder()} title="Buka folder berisi file backup">
+              <Icon name="zoomIn" size={13} /> Buka folder
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="dp-field">
+        <span className="dp-muted">Sistem (OS &amp; perangkat)</span>
+        <AutostartView settings={settings} upd={upd} />
       </div>
       <div className="dp-field">
         <span className="dp-muted">Update (cek manual ke GitHub, tanpa auto-download)</span>
@@ -1292,6 +1408,20 @@ function LogView() {
     const ok = await revealAppLog();
     if (!ok) toast("Tidak bisa membuka", "Hanya di aplikasi desktop yang sudah punya file log.", "error");
   }, []);
+  const clearLogFile = useCallback(async () => {
+    setLogBusy(true);
+    try {
+      const freed = await clearAppLog();
+      if (freed === null) {
+        toast("Tidak bisa menghapus", "Hanya di aplikasi desktop.", "error");
+        return;
+      }
+      toast("File log dikosongkan", freed > 0 ? `${freed} byte dibebaskan.` : "File memang sudah kosong.", "success");
+      await loadFileLog();
+    } finally {
+      setLogBusy(false);
+    }
+  }, [loadFileLog]);
   return (
     <div>
       <div className="dp-muted">Catatan aksi & akses eksternal (metadata saja, tanpa isi privat). Hanya akses network sungguhan yang dicatat — sajian cache tidak masuk log.</div>
@@ -1325,6 +1455,9 @@ function LogView() {
           </button>
           <button className="dp-btn sm" onClick={() => void openLogFile()} disabled={!logPath} title="Buka file log di Explorer/Finder">
             <Icon name="zoomIn" size={13} /> Buka file
+          </button>
+          <button className="dp-btn sm" onClick={() => void clearLogFile()} disabled={logBusy || !logPath} title="Kosongkan file log + salinan rotasi">
+            <Icon name="trash" size={13} /> Hapus file
           </button>
         </div>
         <pre className="dp-log" data-testid="applog-text" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 220, overflowY: "auto" }}>

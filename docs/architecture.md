@@ -1,101 +1,118 @@
-# DeskPet Architecture — P1 Foundation
+# Arsitektur DeskPet
 
-Source: `DESKPET_PRD.md` §§5.1, 7, 8, 11.
+Sumber: `DESKPET_PRD.md` §§5, 7, 8, 11. Status: P1 ✅ + inti lokal P2–P4 ✅.
 
-## Stack (P1)
+## Tumpukan
 
-- Rust + Tauri 2 (OS integration, windows, tray, commands)
-- React + TypeScript + Vite (pet window UI)
-- SQLite via `rusqlite` (bundled) in Rust only
-- Tests: `cargo test` (Rust), `vitest` (frontend)
+| Lapisan | Teknologi | Tanggung jawab |
+| --- | --- | --- |
+| Desktop runtime | Rust + Tauri 2 | OS integration, windows, tray, lifecycle, commands |
+| UI | React + TypeScript + Vite | Pet window, 13-tab panel, settings |
+| Animasi | Spritesheets + Canvas/CSS | State pet + transisi (dengan fallback CSS) |
+| Database | SQLite via `rusqlite` (bundled), hanya via Rust | Persistensi lokal (`deskpet.db`) |
+| Mirror frontend | localStorage (`deskpet:*`) | Source of truth operasional harian + live-sync |
+| Scheduler | Tick 5 dtk (primary saja) + DB | Occurrence pengingat, snooze, missed-handling |
+| Notifikasi | Toast in-app + (native menyusul) | Fallback jelas bila izin ditolak |
+| TTS/SFX | speechSynthesis + WebAudio | Antrean bicara + beep offline |
+| Integrasi eksternal | MyQuran, Aladhan, Open-Meteo, ntfy (opt-in) | Fetch best-effort + cache-first |
+| Test | `cargo test`, Vitest, `tsc --noEmit` | Unit + UI + validasi |
 
-## Flow
+## Aliran
 
 ```text
 React (apps/desktop/src) --invoke/events--> Rust core (src-tauri/src)
-  pet/state.rs ──▶ commands ──▶ tray/window
-  settings ──▶ commands
-  db/open_and_migrate ──▶ SQLite file (app_local_data_dir/deskpet.db)
+  pet/state.rs + companions/ (PetRegistry) --> commands --> tray/window
+  settings/ (+ frontend_settings_* mirror) --> commands
+  actions/ (action_validate + allowlist) + audit
+  applog/ (log_path/read/clear/write, metadata saja)
+  db/open_and_migrate --> SQLite (app_local_data_dir/deskpet.db)
+  prayer_cache_get/put (mirror tahan lama jadwal)
+         |
+         v
+SQLite + OS APIs + provider eksternal yang eksplisit diizinkan
 ```
 
-Rust is authoritative for state validation, settings guards, persistence.
+**Aturan arsitektur (PRD §7):** Rust otoritatif untuk persistensi, validasi,
+izin, eksekusi. React tidak menyentuh SQLite/kredensial langsung. Konten
+eksternal + output AI/parser = untrusted. Fitur inti jalan tanpa network.
 
-## Modules
+## Modul Rust (`src-tauri/src`)
 
-| Path | Responsibility |
-|---|---|
-| `src-tauri/src/pet/` | `PetState` enum (8 PRD states), `can_transition_to`, `FromStr` |
-| `src-tauri/src/db/` | `open_and_migrate`, `open_in_memory`, migration runner |
-| `src-tauri/src/settings/` | `AppSettings` defaults (`telemetry_enabled=false` enforced) |
-| `src-tauri/src/commands/` | `pet_get/set_state`, `pet_is/are_visible`, `settings_get/update`, `app_health` |
-| `src-tauri/src/lib.rs` | tray menu (Show/Hide/Top/Quit), left-click toggle, close→hide, DB best-effort init |
-| `src/features/pet/` | TS mirror state machine + frame table (animation only) |
-| `src/components/PetCanvas/` | CSS placeholder cat, reduced-motion aware |
-| `src/lib/storage.ts` | safe localStorage helper |
+| Path | Tanggung jawab |
+| --- | --- |
+| `pet/` | `PetState` (8 state PRD), `can_transition_to`, `FromStr` |
+| `companions/` | `PetRegistry` per-id + validasi ID + mapping label |
+| `commands/` | `pet_get/set_state[_of]`, `companions_spawn/despawn/list/owner_of`, `pet_is/are_visible`, `settings_get/update`, `frontend_settings_get/put`, `backup_export`, `log_*`, `prayer_cache_*`, `app_health`, `action_validate`, `audit_log`, `app_quit` |
+| `actions/` | Registry + permission engine + allowlist (tolak `shell.exec`) |
+| `applog/` | Log file lokal (metadata saja) |
+| `db/` | `open_and_migrate`, migrasi 001–003, WAL |
+| `settings/` | `AppSettings` defaults (`telemetry_enabled=false` enforced) |
+| `lib.rs` | Tray (Show/Hide/Top/Quit), klik-kiri toggle, close→hide, DB best-effort init, autostart + opener plugin |
 
-## Window (tauri.conf.json)
+## Modul frontend (`apps/desktop/src`)
 
-- Label `pet`, 220×220, `transparent:true`, `decorations:false`, `alwaysOnTop:true`, `skipTaskbar:true`, `resizable:false`.
-- Capabilities (`capabilities/default.json`): minimal window show/hide/drag/position + tray update.
+| Path | Tanggung jawab |
+| --- | --- |
+| `App.tsx` | Shell: interaksi pet, scheduler primary, prayer/weather/ntfy/timer effects, resize window, keyboard |
+| `components/MainPanel.tsx` | 13 tab + `schedulerTick` murni (testable) |
+| `components/PetCanvas/` | Renderer sprite/CSS + reduced-motion |
+| `components/Bubble.tsx` | Slot ambient rotasi (±4 dtk) |
+| `features/pet/` | State machine, `useWander`, `useIdleBehavior`, species/palettes/recolor/hats/greetings/care/companions, context menu |
+| `features/assistant/` | Parser NL deterministik + `validateAction` (pre-check) |
+| `features/prayer/` | MyQuran→Aladhan, cache harian, countdown, adzan beep |
+| `features/weather/` | Open-Meteo tanpa key, cache 15 mnt |
+| `features/apiwatch/` | ntfy SSE opt-in |
+| `features/updater/` | Cek `updates/stable.json` |
+| `features/startup/` | Sinkron autostart OS |
+| `features/calendar/` | Acara lokal (+ stub Google terputus) |
+| `lib/` | `store` (localStorage + backup v2), `time`, `notify` (toast), `tts`, `sfx`, `timerShared`, `sharedData` (live-sync), `settingsSync`, `appLog`, `taskNudge`, `petWindow`, `windowFit`, `useWindowHover` |
 
-## What P1 deliberately omits
+## Window (`tauri.conf.json`)
 
-AI, OAuth, email/calendar, dynamic plugin loading, scheduler daemon, notifications, TTS. No shell execution exists anywhere.
+- Label `pet`, 170×200 awal (dipeluk ke sprite via `petWindowLogicalSize` +
+  ukur DOM; panel 400×620; menu 400×560), `transparent:true`,
+  `decorations:false`, `alwaysOnTop:true`, `skipTaskbar:true`,
+  `resizable:true`, `shadow:false`, `acceptFirstMouse:true`.
+- Capabilities minimal: show/hide/drag/position + tray update.
+- CSP: `default-src 'self'`; `img-src` mengizinkan `data:`/`asset:`; `connect-src`
+  mengizinkan `http(s):` (untuk MyQuran/Aladhan/Open-Meteo/ntfy opt-in).
 
-## Multi-pet (opsi B: 1 window per companion)
+## Multi-pet (1 window per companion, maks 5)
 
-- **Model:** `src/features/pet/companions.ts` — `Companion { id, name, species, paletteId, customColor, scale, role }`.
-  `id "main"` = pet utama (window `pet`); sekunder `c_*` = window `pet-<id>`. Max 5.
-- **Store:** `store.companions` (`deskpet:companions`, localStorage) + migrasi otomatis
-  dari settings single-pet lama + ikut backup/restore (`version: 2`).
-- **Rust:** `src-tauri/src/companions/` (`PetRegistry` per-id state + validasi ID +
-  mapping label, mirror TS). Commands: `pet_get/set_state_of`, `companions_spawn`
-  (cascade +60px, fokus bila sudah ada), `companions_despawn` (tolak `"main"`),
-  `companions_list`. Command lama `pet_get/set_state` tetap kompatibel (operasi `"main"`).
-  Tray Show/Hide + close→hide berlaku ke semua window `pet*`. Capability: `pet`, `pet-*`.
-- **Scheduler terpusat:** hanya window primary yang menjalankan tick pengingat,
-  prayer, ringkasan pagi, dan care decay (anti-duplikat). Alert dirutekan ke presenter
-  via `resolvePresenterFor(list, kind)` berdasarkan `role` (`all/reminder/prayer/timer`;
-  `decor` tidak pernah present), dikirim lewat event `deskpet://present-alert`.
-  Timer per-window tetap lokal. Cuaca + fetch jadwal hanya primary.
-- **Pill ambient per-pet:** tiap window melukis pill suhu/mini-sholat dari cache
-  shared (tanpa network; refresh 60 dtk). Tampil tidaknya diatur per-companion
-  (`showTemp`/`showMini`, default on, via tab Kawan); setting
-  global (`weatherEnabled`, `tempBubbleEnabled`, `prayerEnabled`,
-  `prayerMiniEnabled`) tetap berlaku sebagai master switch. Fetch network +
-  toast hujan hanya primary.
-- **Rotasi pill ngacak:** fase awal + periode rotasi (4 dtk + jitter 0–1,5 dtk)
-  di-hash dari id companion (`slotPhaseFor`/`slotPeriodJitterMsFor`) agar pill
-  tiap pet ganti tidak barengan dan tidak sinkron permanen.
-- **Wander:** tiap window menggerakkan window-nya sendiri (`useWander` +
-  `startDelayMs = phaseDelayMsFor(id)` agar tidak gerak sinkron).
-- **Kelola:** tab "Kawan" (tambah spesies/warna/role/ukuran, tampilkan,
-  hapus). Web preview: daftar tersimpan, window baru hanya di build desktop.
-- **Restore saat restart:** window utama (`pet`) dibuat dari config; window
-  sekunder dibuka ulang oleh primary saat boot (sekuesial, idempoten —
-  yang sudah ada hanya di-show + fokus). Daftar dari `deskpet:companions`.
-- **Batasan v1:** stat lapar/mood/energi + topi + elusan masih global (shared),
-  belum per-companion. localStorage diasumsikan shared antar-window (default Tauri).
+- Model `Companion` + store `deskpet:companions` + migrasi legacy + backup v2.
+- Rust `PetRegistry`; command lama kompatibel (operasi `"main"`).
+- **Scheduler terpusat:** hanya primary yang menjalankan tick pengingat,
+  prayer, ringkasan pagi, care decay, fetch network, eksekusi timer selesai.
+  Alert dirutekan via `resolvePresenterFor(list, kind)` by `role`
+  (`decor` tidak pernah present) lewat `deskpet://present-alert`.
+- **Pill ambient per-pet** dari cache shared (tanpa network; refresh 60 dtk);
+  fase + jitter hash-id agar rotasi tidak sinkron.
+- **Wander per-window** (`useWander` + `phaseDelayMsFor(id)`).
+- **Restore:** window sekunder dibuka ulang primary saat boot (sekuensial,
+  idempoten, timeout 12 dtk/window).
+- Batasan v1: stat + topi + elusan masih global (shared).
 
-## Single shared DB (catatan / timer / pengingat multi-window)
+## Single shared DB
 
-- **Satu sumber kebenaran:** `deskpet.db` (SQLite, WAL) + mirror localStorage
+- Satu kebenaran: `deskpet.db` (WAL) + mirror localStorage
   (`deskpet:reminders/todos/notes/events/automations`, `deskpet:timer`).
-  Semua window membaca daftar yang SAMA — tidak ada DB / namespace per-window.
-- **`created_by` hanya info display** (migrasi `003_shared.sql`, kolom nullable
-  di `reminders/todos/notes/calendar_events/scheduled_jobs`; frontend
-  `createdBy?: string | null` via `normalizeCreatedBy`). Tidak pernah dipakai
-  sebagai filter kepemilikan / partisi. Data lama tanpa field = `null`, tetap valid.
-- **Yang per-companion:** hanya `species/palette/scale/role/showTemp/showMini`
-  (`deskpet:companions`) + ephemeral animation state (Rust `PetRegistry`).
-- **Live-sync lintas window:** tiap `store.*.save()` memanggil
-  `notifyDataChanged(kind)` (`src/lib/sharedData.ts`) → `CustomEvent` lokal +
-  `storage` event + Tauri event `deskpet://data-changed`. Panel daftar
-  (`Reminders/Tasks/Notes/Calendar/Automations/LogView`) subscribe sehingga
-  tambah/ubah dari window A langsung tampil di window B.
-- **Single-executor (anti-duplikat):** hanya primary (`main`) yang menjalankan
-  tick scheduler pengingat, prayer alert, ringkasan pagi, care decay, fetch
-  network cuaca/jadwal, dan eksekusi timer selesai (`completedTimerEnd` guard).
-  Alert dirutekan ke presenter via `resolvePresenterFor(list, kind)` by `role`
-  (`decor` tidak pernah present) lewat `deskpet://present-alert`. Semua window
-  melukis countdown/badge dari state shared yang sama.
+- `createdBy` hanya display (migrasi `003_shared.sql`); bukan filter.
+- Per-companion hanya: species/palette/scale/role/showTemp/showMini/shy/
+  gaya jalan + ephemeral animation state.
+- Live-sync: `store.*.save()` → `notifyDataChanged(kind)` → `CustomEvent` +
+  `storage` event + `deskpet://data-changed`; panel subscribe.
+- Single-executor: countdown/badge dilukis semua window dari state shared.
+
+## Migrasi SQLite
+
+- `001_init.sql`: reminders/todos/notes/app_settings + indexes.
+- `002_actions.sql`: audit/jobs/integrations/calendar_events/automations.
+- `003_shared.sql`: kolom nullable `created_by` (info display).
+- Aturan: timestamp absolut UTC + timezone IANA terpisah; transaksi untuk
+  multi-tabel; index untuk due/status; tanpa secret plaintext; backup eksplisit;
+  uji migrasi dari versi lama.
+
+## Yang disengaja belum
+
+AI eksternal, OAuth Google/Gmail asli, plugin dinamis pihak-3, scheduler OS
+native (alarm saat mati), signing/notarization rilis (P5). Lihat PRD §§10, 19.

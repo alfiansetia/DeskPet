@@ -20,6 +20,19 @@ export async function readAppLog(maxLines = 200): Promise<string | null> {
 }
 
 /**
+ * Kosongkan file log + salinan rotasi. Return byte dibebaskan, null bila
+ * bukan desktop / backend lama. Best-effort, tidak pernah throw.
+ */
+export async function clearAppLog(): Promise<number | null> {
+  try {
+    const n = await invoke<number>("log_clear");
+    return typeof n === "number" && Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Tulis satu baris ke file log backend (`deskpet.log`, local-only).
  * Dipakai mis. mencatat tiap polling API watch (metadata saja: URL,
  * since_id, count — JANGAN kirim title/body privat ke sini).

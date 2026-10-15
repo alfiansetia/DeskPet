@@ -279,6 +279,13 @@ pub fn log_read(app: tauri::AppHandle, max_lines: Option<usize>) -> String {
     crate::applog::read_tail(&app, max_lines.unwrap_or(crate::applog::TAIL_DEFAULT))
 }
 
+/// Kosongkan file log + salinan rotasi (tombol hapus di tab Log).
+/// Return byte yang dibebaskan (0 bila memang belum ada file).
+#[tauri::command]
+pub fn log_clear(app: tauri::AppHandle) -> u64 {
+    crate::applog::clear(&app)
+}
+
 /// Durable mirror of the FRONTEND settings object (opaque JSON blob).
 /// Why: WebView localStorage is per-origin/per-profile and can be wiped;
 /// users expect settings (city, toggles, pet scale) to survive restarts.
@@ -326,6 +333,39 @@ pub fn frontend_settings_put(app: tauri::AppHandle, json: String) -> Result<(), 
     std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Nama file backup dari stamp `YYYY-MM-DD_HHMMSS` (murni, gampang di-test).
+pub fn backup_filename(stamp: &str) -> String {
+    format!("deskpet-backup-{stamp}.json")
+}
+
+/// Validasi blob backup (opaque JSON dari frontend): valid JSON + batas 10 MiB.
+pub fn validate_backup_json(json: &str) -> Result<(), String> {
+    if json.len() > 10_485_760 {
+        return Err("backup too large (max 10 MiB)".into());
+    }
+    serde_json::from_str::<serde_json::Value>(json).map_err(|e| format!("invalid backup json: {e}"))?;
+    Ok(())
+}
+
+/// Tulis blob backup ke folder Dokumen user:
+/// `~/Documents/DeskPet/deskpet-backup-YYYY-MM-DD_HHMMSS.json` (temp+rename).
+/// Return path absolut agar UI bisa menampilkan + tombol "buka folder".
+/// Frontend pemilik skema — Rust hanya menulis bytes.
+#[tauri::command]
+pub fn backup_export(json: String) -> Result<String, String> {
+    validate_backup_json(&json)?;
+    let stamp = chrono::Local::now().format("%Y-%m-%d_%H%M%S").to_string();
+    let dir = dirs::document_dir()
+        .ok_or("no documents dir")?
+        .join("DeskPet");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(backup_filename(&stamp));
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 /// Durable mirror of ONE day of prayer schedule (opaque JSON blob).
@@ -451,5 +491,31 @@ mod prayer_blob_tests {
         assert!(validate_prayer_blob("not json").is_err());
         assert!(validate_prayer_blob(r#"{"subuh":"04:30"}"#).is_err());
         assert!(validate_prayer_blob(&"x".repeat(20_000)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod backup_tests {
+    use super::{backup_filename, validate_backup_json};
+
+    #[test]
+    fn filename_has_expected_shape() {
+        assert_eq!(
+            backup_filename("2026-10-15_101500"),
+            "deskpet-backup-2026-10-15_101500.json"
+        );
+    }
+
+    #[test]
+    fn accepts_any_valid_json_blob() {
+        assert!(validate_backup_json(r#"{"app":"deskpet","version":2}"#).is_ok());
+        assert!(validate_backup_json("[1,2,3]").is_ok());
+    }
+
+    #[test]
+    fn rejects_garbage_and_oversize() {
+        assert!(validate_backup_json("not json").is_err());
+        assert!(validate_backup_json("").is_err());
+        assert!(validate_backup_json(&"x".repeat(11_000_000)).is_err());
     }
 }

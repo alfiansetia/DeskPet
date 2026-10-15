@@ -87,6 +87,24 @@ pub fn tail_lines(content: &str, n: usize) -> String {
     lines[start..].join("\n")
 }
 
+/// Kosongkan file log aktif + salinan rotasi (.old). Return byte dibebaskan.
+/// Idempoten: tanpa file = Ok(0). Best-effort per file (satu gagal tak
+/// menggagalkan yang lain).
+pub fn clear(app: &AppHandle) -> u64 {
+    let Some(path) = log_path(app) else {
+        return 0;
+    };
+    let old = path.with_extension("log.old");
+    let mut freed = 0u64;
+    for p in [&path, &old] {
+        if let Ok(m) = std::fs::metadata(p) {
+            freed += m.len();
+            let _ = std::fs::remove_file(p);
+        }
+    }
+    freed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

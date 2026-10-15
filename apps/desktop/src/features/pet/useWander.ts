@@ -200,6 +200,28 @@ export function previewBounds(pw: number, ph: number, halfW: number, halfH: numb
   };
 }
 
+/** Jarak maksimum dari tepi agar dianggap masih "nempel tepi" (physical px).
+ *  Di atas ini, siklus keliling wajib kaki sinkronisasi dulu — tanpa itu kaki
+ *  pertama melintas tengah layar. */
+export const EDGE_RESYNC_PX = 60;
+
+/**
+ * Perlu kaki sinkronisasi ke tepi sebelum keliling? Ya bila acuan tepi tak ada
+ * (awal), bukan tepi terdekat dari posisi nyata, atau posisi sudah jauh dari
+ * tepi. Penyebab posisi lepas: drag user, centerPet saat alert, interupsi
+ * (pause/sleep) di tengah kaki, atau pindah monitor. Tanpa sync, garis lurus
+ * dari tengah layar ke tepi = nyeberang tengah.
+ */
+export function needsEdgeResync(
+  pos: { x: number; y: number }, b: WanderBounds, edge: EdgeIndex | null,
+): { cur: EdgeIndex; sync: boolean } {
+  const near = nearestEdge(pos.x, pos.y, b);
+  if (edge === null || edge !== near) return { cur: near, sync: true };
+  const p = nearestPointOnEdge(pos.x, pos.y, b, near);
+  const off = Math.hypot(p.x - pos.x, p.y - pos.y);
+  return { cur: near, sync: off > EDGE_RESYNC_PX };
+}
+
 /** Jeda hover sebelum pet pemalu kabur (ms) — klik kanan cepat masih sempat buka menu. */
 export const FLEE_HOVER_MS = 500;
 /** Cooldown antar kabur (ms) agar tidak kejar-kejaran dengan kursor. */
@@ -521,18 +543,21 @@ export function useWander({
           // layar. Tanpa s-range (full edge), garis dari ujung jauh ke ujung
           // jauh = diagonal nyeberang tengah (itu bug-nya).
           const b = { minX, maxX, minY, maxY };
-          const isFirstSync = edgeRef.current === null;
-          const cur = edgeRef.current ?? nearestEdge(pos.x, pos.y, b);
+          // Sinkronisasi ulang dari POSISI NYATA tiap siklus (bukan asumsi):
+          // drag, centerPet saat alert, atau interupsi di tengah kaki bisa
+          // memindahkan pet jauh dari tepi acuan. Tanpa kaki sync, garis
+          // pertama dari posisi itu ke tepi = nyeberang tengah layar.
+          const resync = needsEdgeResync({ x: pos.x, y: pos.y }, b, edgeRef.current);
+          const cur = resync.cur;
           const step: 1 | 3 = Math.random() < 0.5 ? 1 : 3; // 1=searah, 3=mundur (= -1 mod 4)
           const next1 = ((cur + step) % 4) as EdgeIndex;
           const next2 = ((next1 + step) % 4) as EdgeIndex;
           const { sMin, sMax } = edgeStepRange(step);
-          // Sinkron awal: posisi bisa di tengah layar (mis. habis alert yang
-          // centerPet, atau baru ganti setting). Mampir dulu ke titik
-          // terdekat di tepi saat ini (jalur tegak lurus terpendek), baru
-          // mulai keliling — tanpa ini leg pertama diagonal dari tengah ke
-          // tepi sebelah = nyeberang tengah.
-          if (isFirstSync) {
+          // Kembali nempel ke tepi terdekat dulu (jalur tegak lurus
+          // terpendek) sebelum mulai keliling — termasuk sinkron awal saat
+          // posisi masih di tengah layar. Executor melewati kaki <5px
+          // sehingga sync yang tak diperlukan praktis no-op.
+          if (resync.sync) {
             const sync = nearestPointOnEdge(pos.x, pos.y, b, cur);
             legs.push({
               targetX: sync.x,

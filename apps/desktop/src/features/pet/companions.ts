@@ -9,6 +9,7 @@
  * - id lain    -> window label `pet-${id}`
  */
 import { characterIdFor, isPetSpecies, type PetSpecies } from "./species";
+import type { WanderDirection, WanderPace } from "../../lib/store";
 
 export const MAIN_COMPANION_ID = "main";
 export const MAX_COMPANIONS = 5;
@@ -28,6 +29,17 @@ export function isCompanionRole(v: unknown): v is CompanionRole {
   return v === "all" || v === "reminder" || v === "prayer" || v === "timer" || v === "decor";
 }
 
+const WANDER_PACES: WanderPace[] = ["random", "slow", "normal", "fast"];
+const WANDER_DIRS: WanderDirection[] = ["random", "horizontal", "vertical", "edges"];
+
+export function isWanderPace(v: unknown): v is WanderPace {
+  return typeof v === "string" && (WANDER_PACES as string[]).includes(v);
+}
+
+export function isWanderDirection(v: unknown): v is WanderDirection {
+  return typeof v === "string" && (WANDER_DIRS as string[]).includes(v);
+}
+
 export interface Companion {
   id: string;
   name: string;
@@ -42,6 +54,12 @@ export interface Companion {
   showMini: boolean;
   /** Pemalu: menjauh saat kursor hover (default false). Diatur per karakter. */
   shy: boolean;
+  /** Override gaya jalan per karakter; undefined = ikuti default global.
+   *  undefined disengaja (bukan default konkret) agar data lama yang belum
+   *  punya field tetap berperilaku sama seperti sebelum fitur ini ada. */
+  wanderEnabled?: boolean;
+  wanderPace?: WanderPace;
+  wanderDirection?: WanderDirection;
   createdAt: string;
 }
 
@@ -103,6 +121,9 @@ export function normalizeCompanion(raw: unknown, fallbackId = MAIN_COMPANION_ID)
     showTemp: typeof r.showTemp === "boolean" ? r.showTemp : true,
     showMini: typeof r.showMini === "boolean" ? r.showMini : true,
     shy: r.shy === true,
+    wanderEnabled: typeof r.wanderEnabled === "boolean" ? r.wanderEnabled : undefined,
+    wanderPace: isWanderPace(r.wanderPace) ? r.wanderPace : undefined,
+    wanderDirection: isWanderDirection(r.wanderDirection) ? r.wanderDirection : undefined,
     createdAt: typeof r.createdAt === "string" && !Number.isNaN(Date.parse(r.createdAt))
       ? r.createdAt
       : new Date().toISOString(),
@@ -209,6 +230,24 @@ export function resolvePresenterFor(
   const pool = eligible.length > 0 ? eligible : list;
   const direct = pool.find((c) => c.role === kind || c.role === "all");
   return direct ?? pool[0] ?? null;
+}
+
+export interface ResolvedWander {
+  enabled: boolean;
+  pace: WanderPace;
+  direction: WanderDirection;
+}
+
+/** Gaya jalan efektif satu companion: override pet menang, lalu default global. */
+export function resolveWanderFor(
+  c: Companion | undefined,
+  g: { wanderEnabled: boolean; wanderPace?: WanderPace; wanderDirection?: WanderDirection },
+): ResolvedWander {
+  return {
+    enabled: c?.wanderEnabled ?? g.wanderEnabled,
+    pace: c?.wanderPace ?? g.wanderPace ?? "random",
+    direction: c?.wanderDirection ?? g.wanderDirection ?? "random",
+  };
 }
 
 /** Delay awal wander (ms) dari hash id agar N pet tidak gerak sinkron. 0 untuk "main". */

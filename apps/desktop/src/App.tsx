@@ -17,7 +17,7 @@ import {
 } from "./lib/store";
 import { countOverdue, shouldFireTaskNudge } from "./lib/taskNudge";
 import {
-  MAIN_COMPANION_ID, companionIdFromWindowLabel, phaseDelayMsFor, resolvePresenterFor,
+  MAIN_COMPANION_ID, companionIdFromWindowLabel, phaseDelayMsFor, resolvePresenterFor, resolveWanderFor,
   slotPeriodJitterMsFor, slotPhaseFor, spawnCompanionWindow,
 } from "./features/pet/companions";
 import { pullBackendSettings, pushBackendSettings } from "./lib/settingsSync";
@@ -958,18 +958,31 @@ export default function App() {
     const curScale = () =>
       companionsRef.current.find((c) => c.id === ownIdRef.current)?.scale
       ?? settingsRef.current.petScale ?? 1;
+    // Gaya jalan milik companion PEMILIK WINDOW ini (per karakter; global
+    // hanya fallback untuk data lama). Pola sama seperti setOwnScale.
+    const patchOwnCompanion = (patch: Partial<Companion>) => {
+      const id = ownIdRef.current;
+      setCompanions(updateCompanion(id, patch));
+      try {
+        void Promise.resolve(emit("deskpet://companions-changed", "changed")).catch(() => { /* preview */ });
+      } catch { /* preview */ }
+    };
     switch (a) {
       case "timer-5": timerStart(5 * 60, "Fokus"); break;
       case "timer-15": timerStart(15 * 60, "Fokus"); break;
       case "timer-25": timerStart(25 * 60, "Fokus"); break;
       case "feed": onCare("feed"); break;
       case "play": onCare("play"); break;
-      case "toggle-wander": setSettings((s) => ({ ...s, wanderEnabled: !s.wanderEnabled })); break;
+      case "toggle-wander": {
+        const w = resolveWanderFor(companionsRef.current.find((c) => c.id === ownIdRef.current), settingsRef.current);
+        patchOwnCompanion({ wanderEnabled: !w.enabled });
+        break;
+      }
       case "cycle-wander-pace": {
+        const w = resolveWanderFor(companionsRef.current.find((c) => c.id === ownIdRef.current), settingsRef.current);
         const paces: WanderPace[] = ["random", "slow", "fast", "normal"];
-        const cur = settings.wanderPace ?? "random";
-        const next = paces[(paces.indexOf(cur) + 1) % paces.length];
-        setSettings((s) => ({ ...s, wanderPace: next }));
+        const next = paces[(paces.indexOf(w.pace) + 1) % paces.length];
+        patchOwnCompanion({ wanderPace: next });
         const names: Record<WanderPace, string> = {
           random: "Acak (Lari / Santai)",
           slow: "Santai / Pelan",
@@ -980,10 +993,10 @@ export default function App() {
         break;
       }
       case "cycle-wander-dir": {
+        const w = resolveWanderFor(companionsRef.current.find((c) => c.id === ownIdRef.current), settingsRef.current);
         const dirs: WanderDirection[] = ["random", "horizontal", "vertical", "edges"];
-        const cur = settings.wanderDirection ?? "random";
-        const next = dirs[(dirs.indexOf(cur) + 1) % dirs.length];
-        setSettings((s) => ({ ...s, wanderDirection: next }));
+        const next = dirs[(dirs.indexOf(w.direction) + 1) % dirs.length];
+        patchOwnCompanion({ wanderDirection: next });
         const names: Record<WanderDirection, string> = {
           random: "Acak (Semua Arah)",
           horizontal: "Kiri – Kanan (Patroli)",
@@ -1006,7 +1019,7 @@ export default function App() {
         catch { window.close(); }
         break;
     }
-  }, [requestState, setVisibleBoth, timerStart, settings.wanderPace, settings.wanderDirection, onCare]);
+  }, [requestState, setVisibleBoth, timerStart, onCare]);
 
   // Keyboard: Ctrl/Cmd+Shift+D hide/show, Esc confirms alert, else closes menu/panel
   useEffect(() => {
@@ -1068,10 +1081,12 @@ export default function App() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hovered, shyArmed]);
+  // Gaya jalan efektif pet window ini (override per karakter, fallback global).
+  const wanderPref = resolveWanderFor(me, settings);
   const { offset, facing, walkSpeed, centerPet } = useWander({
-    enabled: settings.wanderEnabled,
-    wanderPace: settings.wanderPace ?? "random",
-    wanderDirection: settings.wanderDirection ?? "random",
+    enabled: wanderPref.enabled,
+    wanderPace: wanderPref.pace,
+    wanderDirection: wanderPref.direction,
     petState,
     reducedMotion: settings.reducedMotion,
     paused: wanderPaused,
@@ -1259,9 +1274,9 @@ export default function App() {
       {menu && (
         <PetContextMenu
           x={menu.x} y={menu.y}
-          wanderEnabled={settings.wanderEnabled}
-          wanderPace={settings.wanderPace ?? "random"}
-          wanderDirection={settings.wanderDirection ?? "random"}
+          wanderEnabled={wanderPref.enabled}
+          wanderPace={wanderPref.pace}
+          wanderDirection={wanderPref.direction}
           alwaysOnTop={settings.alwaysOnTop}
           reducedMotion={settings.reducedMotion} sleeping={petState === "sleep"}
           petScale={petScale}
