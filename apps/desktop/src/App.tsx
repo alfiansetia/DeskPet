@@ -56,7 +56,14 @@ export default function App() {
   const [visible, setVisible] = useState(true);
   const [settings, setSettings] = useState<DeskSettings>(() => loadSettings());
   // Multi-pet (opsi B): window ini milik companion `ownId`; daftar shared via localStorage.
-  const [ownId, setOwnId] = useState<string>(MAIN_COMPANION_ID);
+  // ownId dibaca SYNCHRONOUSLY saat state awal (bukan di efek) agar `isPrimary`
+  // benar sejak render pertama. Kalau menunggu efek identitas, semua window
+  // sekunder sempat mengira dirinya primary saat mount -> efek yang di-gate
+  // primary (scheduler tick, ntfy subscribe, dsb.) sempat jalan di SEMUA
+  // window -> alert tampil di semua karakter + duplikat antar-window.
+  const [ownId, setOwnId] = useState<string>(() => {
+    try { return companionIdFromWindowLabel(getCurrentWindow().label); } catch { return MAIN_COMPANION_ID; }
+  });
   const [companions, setCompanions] = useState<Companion[]>(() => loadCompanions());
   const me: Companion | undefined = companions.find((c) => c.id === ownId) ?? companions[0];
   const isPrimary = ownId === MAIN_COMPANION_ID;
