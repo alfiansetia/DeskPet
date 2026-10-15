@@ -20,6 +20,21 @@ export async function readAppLog(maxLines = 200): Promise<string | null> {
 }
 
 /**
+ * Tulis satu baris ke file log backend (`deskpet.log`, local-only).
+ * Dipakai mis. mencatat tiap polling API watch (metadata saja: URL,
+ * since_id, count — JANGAN kirim title/body privat ke sini).
+ * Best-effort, tidak pernah throw.
+ */
+export async function writeAppLog(level: "info" | "warn" | "error", msg: string): Promise<boolean> {
+  try {
+    await invoke("log_write", { level, msg });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Tampilkan file log di file manager (Explorer/Finder, diseleksi).
  * False bila bukan desktop / path tak ada / permission ditolak.
  */

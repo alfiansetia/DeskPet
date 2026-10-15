@@ -141,6 +141,7 @@ pub fn run() {
             commands::frontend_settings_put,
             commands::log_path,
             commands::log_read,
+            commands::log_write,
             commands::prayer_cache_get,
             commands::prayer_cache_put,
             commands::app_health,

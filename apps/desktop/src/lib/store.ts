@@ -327,12 +327,14 @@ export function ensureAutomationDefaults(): void {
 
 /** Full local backup (explicit user action, PRD §5.4). */
 export function exportBackup(): string {
+  let apiconfig: unknown = null;
+  try { apiconfig = loadJSON("deskpet:apiwatch", null); } catch { apiconfig = null; }
   return JSON.stringify({
     app: "deskpet", version: 2, exportedAt: nowUTC(),
     reminders: store.reminders.all(), todos: store.todos.all(),
     notes: store.notes.all(), events: store.events.all(),
     automations: store.automations.all(), settings: loadSettings(),
-    companions: loadCompanions(),
+    companions: loadCompanions(), apiconfig,
   }, null, 2);
 }
 
@@ -347,6 +349,7 @@ export function importBackup(json: string): { ok: boolean; error?: string } {
     if (Array.isArray(d.automations)) store.automations.save(d.automations);
     if (d.settings && typeof d.settings === "object") saveSettings({ ...DEFAULT_SETTINGS, ...d.settings, telemetryEnabled: false });
     if (Array.isArray(d.companions)) saveCompanions(normalizeCompanionList(d.companions));
+    if (d.apiconfig && typeof d.apiconfig === "object") saveJSON("deskpet:apiwatch", d.apiconfig);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };

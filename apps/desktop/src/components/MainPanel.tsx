@@ -18,8 +18,13 @@ import { PET_SPECIES, type PetSpecies } from "../features/pet/species";
 import { HATS, unlockedHats } from "../features/pet/hats";
 import { PrayerView } from "../features/prayer/PrayerView";
 import { AutostartView } from "../features/startup/AutostartView";
+import {
+  buildPollUrl, loadApiWatch, normalizeApiWatch, saveApiWatch, testEndpoint,
+  MIN_INTERVAL_SECS, MAX_INTERVAL_SECS,
+  type ApiWatchConfig, type TestOutcome,
+} from "../features/apiwatch/apiwatch";
 
-export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "companions" | "settings" | "log";
+export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "apiwatch" | "companions" | "settings" | "log";
 
 interface Props {
   tab: PanelTab;
@@ -43,7 +48,7 @@ const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
   { id: "tasks", icon: "task", title: "Tugas" }, { id: "notes", icon: "note", title: "Catatan" },
   { id: "timer", icon: "timer", title: "Timer" }, { id: "calendar", icon: "calendar", title: "Kalender" },
   { id: "prayer", icon: "moonStar", title: "Jadwal Sholat" },
-  { id: "auto", icon: "settings", title: "Otomatisasi" }, { id: "companions", icon: "star", title: "Kawan" },
+  { id: "auto", icon: "settings", title: "Otomatisasi" }, { id: "apiwatch", icon: "activity", title: "API Watch" }, { id: "companions", icon: "star", title: "Kawan" },
   { id: "settings", icon: "sliders", title: "Pengaturan" },
   { id: "log", icon: "history", title: "Log" },
 ];
@@ -52,7 +57,7 @@ const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
  *  Kerja = bikin/ingat, Waktu = berbasis jam, Sistem = app-nya sendiri. */
 const TAB_GROUPS: { id: string; label: string; tabs: PanelTab[] }[] = [
   { id: "kerja", label: "Kerja", tabs: ["assistant", "reminders", "tasks", "notes"] },
-  { id: "waktu", label: "Waktu", tabs: ["timer", "calendar", "prayer", "auto"] },
+  { id: "waktu", label: "Waktu", tabs: ["timer", "calendar", "prayer", "auto", "apiwatch"] },
   { id: "sistem", label: "Sistem", tabs: ["companions", "settings", "log"] },
 ];
 
@@ -120,6 +125,7 @@ export function MainPanel(p: Props) {
         {p.tab === "calendar" && <Calendar bump={p.bump} rkey={p.refreshKey} ownId={p.ownId} />}
         {p.tab === "prayer" && <PrayerView settings={p.settings} setSettings={p.setSettings} bump={p.bump} />}
         {p.tab === "auto" && <Automations bump={p.bump} rkey={p.refreshKey} />}
+        {p.tab === "apiwatch" && <ApiWatchView rkey={p.refreshKey} />}
         {p.tab === "companions" && <CompanionsView companions={companions} setCompanions={setCompanions} />}
         {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} onCare={p.onCare} companions={companions} setCompanions={setCompanions} ownId={p.ownId} />}
         {p.tab === "log" && <LogView />}
@@ -1077,6 +1083,133 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
       <div className="dp-muted"><span className="dp-line"><Icon name="check" size={12} /> Local-first · telemetry OFF permanen · Gmail/Google opt-in (belum terhubung) · log aktivitas ada di tab Log.</span></div>
         </div>
       </details>
+    </div>
+  );
+}
+
+/* ---------------- API Watch (polling endpoint notifikasi) ---------------- */
+function ApiWatchView({ rkey }: { rkey: number }) {
+  const [cfg, setCfg] = useState<ApiWatchConfig>(() => loadApiWatch());
+  // Ticker di App.tsx menulis cursor (lastSeenId/lastCheckedAt) tiap putaran;
+  // muat ulang saat panel di-refresh agar status terlihat segar.
+  useEffect(() => { setCfg(loadApiWatch()); }, [rkey]);
+  const [testing, setTesting] = useState(false);
+  const [testRes, setTestRes] = useState<TestOutcome | null>(null);
+  const [baselining, setBaselining] = useState(false);
+  const [cursorInput, setCursorInput] = useState("");
+  const upd = (patch: Partial<ApiWatchConfig>) => {
+    const next = normalizeApiWatch({ ...cfg, ...patch });
+    saveApiWatch(next);
+    setCfg(next);
+  };
+  // Uji endpoint: fetch SEKALI tanpa since_id, tanpa mengubah cursor.
+  const doTest = async () => {
+    setTesting(true);
+    setTestRes(null);
+    try {
+      setTestRes(await testEndpoint(cfg.baseUrl));
+    } finally {
+      setTesting(false);
+    }
+  };
+  // Uji coba: mundurkan/majukan cursor manual (mis. 18 -> 1) agar putaran
+  // berikutnya menganggap data di atasnya sebagai "baru" dan bunyi lagi.
+  const doRewind = () => {
+    const n = Math.floor(Number(cursorInput));
+    if (!Number.isFinite(n) || n < 0) {
+      toast("Cursor tidak valid", "Isi angka id >= 0.", "error");
+      return;
+    }
+    const next = normalizeApiWatch({ ...cfg, lastSeenId: n, lastError: null });
+    saveApiWatch(next);
+    setCfg(next);
+    setCursorInput("");
+    toast("Cursor diubah", `Putaran berikut polling ?since_id=${n}.`, "success");
+  };
+  // Baseline: set cursor = latest_id agar data lama tidak meledak jadi notif.
+  const doBaseline = async () => {
+    setBaselining(true);
+    try {
+      const r = await testEndpoint(cfg.baseUrl);
+      if (r.ok && r.latestId !== null) {
+        const next = normalizeApiWatch({ ...cfg, lastSeenId: r.latestId, lastCheckedAt: new Date().toISOString(), lastError: null });
+        saveApiWatch(next);
+        setCfg(next);
+        toast("Baseline disimpan", `Cursor = ${r.latestId}. Data lama tidak akan bunyi.`, "success");
+      } else {
+        toast("Baseline gagal", r.error ?? "Tidak dapat fetch.", "error");
+      }
+    } finally {
+      setBaselining(false);
+    }
+  };
+  return (
+    <div className="dp-settings">
+      <div className="dp-muted">
+        <span className="dp-line"><Icon name="activity" size={12} /> Pantau endpoint JSON (mis. Laravel <code>?since_id=</code>) tiap interval. Item baru (id &gt; cursor) jadi bubble + toast + opsional baris Pengingat. Tiap putaran dicatat di file log (tab Log).</span>
+      </div>
+      <label className="dp-check">
+        <input type="checkbox" checked={cfg.enabled} onChange={(e) => upd({ enabled: e.target.checked })} /> Aktifkan polling (opt-in)
+      </label>
+      <div className="dp-field">
+        <span className="dp-muted">Endpoint (tanpa query since_id — ditambah otomatis; tersimpan di cache lokal)</span>
+        <input className="dp-in" type="url" inputMode="url" placeholder="https://server-anda.id/api/notif-histories/poll"
+          value={cfg.baseUrl} onChange={(e) => upd({ baseUrl: e.target.value })} aria-label="Endpoint API Watch" />
+        {cfg.baseUrl ? (
+          <span className="dp-muted" style={{ fontSize: 12 }}>Polling ke: <code>{buildPollUrl(cfg.baseUrl, cfg.lastSeenId)}</code></span>
+        ) : (
+          <span className="dp-muted" style={{ fontSize: 12 }}>Belum ada endpoint — isi dulu di atas, lalu Test + Jadikan baseline.</span>
+        )}
+      </div>
+      <div className="dp-row" style={{ alignItems: "center" }}>
+        <label htmlFor="dp-apiwatch-interval" style={{ minWidth: 130 }}>Interval (detik)</label>
+        <input id="dp-apiwatch-interval" className="dp-in" type="number" style={{ width: 90 }}
+          min={MIN_INTERVAL_SECS} max={MAX_INTERVAL_SECS} step={15}
+          value={cfg.intervalSecs} onChange={(e) => upd({ intervalSecs: Number(e.target.value) })} />
+        <span className="dp-muted" style={{ fontSize: 12 }}>min {MIN_INTERVAL_SECS} dtk</span>
+      </div>
+      <label className="dp-check">
+        <input type="checkbox" checked={cfg.saveAsReminder} onChange={(e) => upd({ saveAsReminder: e.target.checked })} /> Simpan item baru ke tab Pengingat (title + body)
+      </label>
+      <label className="dp-check">
+        <input type="checkbox" checked={cfg.speakNew} onChange={(e) => upd({ speakNew: e.target.checked })} /> Bacakan judul via suara (TTS)
+      </label>
+      <div className="dp-row">
+        <button className="dp-btn sm" onClick={() => void doTest()} disabled={testing || !cfg.baseUrl}>
+          <Icon name="zap" size={13} /> {testing ? "Mengetes…" : "Test endpoint"}
+        </button>
+        <button className="dp-btn sm" onClick={() => void doBaseline()} disabled={baselining || testing || !cfg.baseUrl}>
+          <Icon name="check" size={13} /> {baselining ? "Menyimpan…" : "Jadikan baseline"}
+        </button>
+      </div>
+      <div className="dp-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+        <label htmlFor="dp-apiwatch-cursor" style={{ minWidth: 130 }}>Cursor uji coba</label>
+        <input id="dp-apiwatch-cursor" className="dp-in" type="number" style={{ flex: "none", width: 130, fontSize: 14 }}
+          min={0}
+          placeholder={String(cfg.lastSeenId ?? 0)}
+          value={cursorInput} onChange={(e) => setCursorInput(e.target.value)} aria-label="Cursor manual" />
+        <button className="dp-btn sm" onClick={doRewind} disabled={!cfg.baseUrl}>
+          <Icon name="history" size={13} /> Set cursor
+        </button>
+        <span className="dp-muted" style={{ fontSize: 12, flexBasis: "100%" }}>mis. cursor 18 → isi 1 lalu polling bunyikan 2–18 lagi</span>
+      </div>
+      {testRes && (
+        <div className="dp-card" data-testid="apiwatch-test-result">
+          {testRes.ok ? (
+            <>
+              <div><Icon name="checkCircle" size={13} /> OK HTTP {testRes.httpStatus} · count {testRes.count} · latest_id {testRes.latestId ?? "-"}</div>
+              {testRes.previewTitle && <div style={{ marginTop: 4 }}><b>{testRes.previewTitle}</b></div>}
+              {testRes.previewBody && <div className="dp-muted" style={{ whiteSpace: "pre-wrap" }}>{testRes.previewBody}</div>}
+            </>
+          ) : (
+            <div><Icon name="xCircle" size={13} /> Gagal{testRes.httpStatus ? ` HTTP ${testRes.httpStatus}` : ""}: {testRes.error}</div>
+          )}
+        </div>
+      )}
+      <div className="dp-muted" style={{ fontSize: 12 }}>
+        Status: cursor <code>{cfg.lastSeenId ?? "-"}</code> · cek terakhir {cfg.lastCheckedAt ?? "-"}
+        {cfg.lastError && <span> · error: {cfg.lastError}</span>}
+      </div>
     </div>
   );
 }

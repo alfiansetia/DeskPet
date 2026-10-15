@@ -249,6 +249,29 @@ pub fn log_path(app: tauri::AppHandle) -> Result<String, String> {
         .ok_or_else(|| "no app data dir".to_string())
 }
 
+/// Tulis satu baris ke file log dari frontend (mis. hasil polling API watch).
+/// Local-only, metadata saja: pesan dibatasi 2048 char, newline dilipat jadi
+/// spasi agar format satu-baris-per-event tetap terjaga. Tidak pernah throw.
+#[tauri::command]
+pub fn log_write(app: tauri::AppHandle, level: String, msg: String) -> Result<(), String> {
+    let lvl = match level.to_ascii_lowercase().as_str() {
+        "info" => "INFO",
+        "warn" => "WARN",
+        "error" => "ERROR",
+        _ => return Err("unknown level (use info/warn/error)".into()),
+    };
+    let flat: String = msg.chars().map(|c| if c == '\n' || c == '\r' { ' ' } else { c }).collect();
+    let flat = flat.trim();
+    if flat.is_empty() {
+        return Err("empty message (rejected)".into());
+    }
+    if flat.len() > 2048 {
+        return Err("message too long (max 2048)".into());
+    }
+    crate::applog::write(&app, lvl, flat);
+    Ok(())
+}
+
 /// Isi N baris terakhir file log (untuk tab Log). String kosong bila file
 /// belum ada (mis. baru pertama jalan). Tidak pernah error.
 #[tauri::command]
