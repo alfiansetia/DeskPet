@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { DEFAULT_SETTINGS, exportBackup, importBackup, loadSettings, saveSettings, store } from "./store";
+import { DEFAULT_SETTINGS, ensureAutomationDefaults, exportBackup, importBackup, loadSettings, saveSettings, store } from "./store";
 
 beforeEach(() => { localStorage.clear(); });
 
@@ -99,5 +99,20 @@ describe("store backup/restore", () => {
   it("rejects foreign files", () => {
     expect(importBackup('{"app":"other"}').ok).toBe(false);
     expect(importBackup("not json").ok).toBe(false);
+  });
+});
+
+describe("automation defaults migration", () => {
+  it("user lama kebagian otomasi baru tanpa kehilangan setting", () => {
+    store.automations.save([
+      { id: "auto_morning", name: "x", summary: "y", trigger: "weekday_morning", enabled: false, createdAt: "2026-01-01T00:00:00Z" },
+    ]);
+    ensureAutomationDefaults();
+    const all = store.automations.all();
+    expect(all.find((a) => a.id === "auto_morning")?.enabled).toBe(false); // setting user utuh
+    expect(all.find((a) => a.id === "auto_task_nudge")?.enabled).toBe(true);
+    // Idempotent: tidak duplikat.
+    ensureAutomationDefaults();
+    expect(store.automations.all().filter((a) => a.id === "auto_task_nudge")).toHaveLength(1);
   });
 });

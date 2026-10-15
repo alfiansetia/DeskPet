@@ -12,9 +12,10 @@ import {
   TRANSIENT_STATES, TRANSIENT_TIMEOUT_MS, canTransitionTo, type PetState,
 } from "./features/pet/petStateMachine";
 import {
-  loadCompanions, loadSettings, saveCompanions, saveSettings, store, uid, updateCompanion,
+  ensureAutomationDefaults, loadCompanions, loadSettings, saveCompanions, saveSettings, store, uid, updateCompanion,
   type Companion, type DeskSettings, type WanderPace, type WanderDirection,
 } from "./lib/store";
+import { countOverdue, shouldFireTaskNudge } from "./lib/taskNudge";
 import {
   MAIN_COMPANION_ID, companionIdFromWindowLabel, phaseDelayMsFor, resolvePresenterFor,
   slotPeriodJitterMsFor, slotPhaseFor, spawnCompanionWindow,
@@ -158,6 +159,9 @@ export default function App() {
     // Autostart: samakan OS dengan niat user (pasang bila setting on tapi
     // belum terpasang — "fix bila belum ada"). Best-effort, diam-diam.
     void ensureAutostart(loadSettings().autoStart).catch(() => {});
+    // User lama: simpanannya belum punya otomasi baru (auto_task_nudge) —
+    // gabungkan tanpa menghapus setting mereka.
+    try { ensureAutomationDefaults(); } catch { /* noop */ }
     const myId = (() => {
       try { return companionIdFromWindowLabel(getCurrentWindow().label); } catch { return MAIN_COMPANION_ID; }
     })();
@@ -468,12 +472,35 @@ export default function App() {
       if (now.getHours() === 9 && now.getMinutes() === 0) {
         const auto = store.automations.all().find((a) => a.id === "auto_morning");
         const today = now.toDateString();
-        if (auto?.enabled && auto.lastRunAt && new Date(auto.lastRunAt).toDateString() !== today) {
+        const lastDay = auto?.lastRunAt ? new Date(auto.lastRunAt).toDateString() : null;
+        if (auto?.enabled && lastDay !== today) {
           const dueToday = store.todos.all().filter((t) => t.status !== "completed").length;
           // Sama seperti pengingat lain: dirutekan ke presenter role "reminder".
           routeOrPresent("reminder", "Ringkasan pagi", `${dueToday} tugas terbuka — klik untuk konfirmasi.`, "sun");
           auto.lastRunAt = now.toISOString();
           store.automations.save(store.automations.all().map((a) => (a.id === auto.id ? auto : a)));
+        }
+      }
+      // Nudge tugas terbuka (13:00 & 17:30, maks 1x/slot/hari, hanya bila ada
+      // yang actionable). Sengaja toast lembut (tanpa enlarge/bubble) agar
+      // tidak mengganggu kerja — matikan via Otomatisasi bila berisik.
+      {
+        const auto = store.automations.all().find((a) => a.id === "auto_task_nudge");
+        if (auto?.enabled) {
+          const fire = shouldFireTaskNudge(now, store.todos.all(), auto.lastRunAt);
+          if (fire) {
+            const overdue = countOverdue(fire.open, now);
+            toast(
+              `Masih ada ${fire.open.length} tugas terbuka`,
+              overdue > 0
+                ? `${overdue} lewat jatuh tempo — cicil yuk, buka tab Tugas.`
+                : "Yuk cicil — buka tab Tugas untuk lihat.",
+              "info",
+            );
+            auto.lastRunAt = fire.key;
+            store.automations.save(store.automations.all().map((a) => (a.id === auto.id ? auto : a)));
+            bump();
+          }
         }
       }
       // Timer countdown handled separately
@@ -590,7 +617,8 @@ export default function App() {
     const cached = getCachedPrayerDay(cityId, new Date());
     if (cached && cached.date === today) setPrayerDay(cached);
     void check();
-    const fast = setInterval(() => setPrayerTick((t) => t + 1), 1000);
+    // Countdown presisi menit: tick 30 dtk cukup (hemat re-render + resize window).
+    const fast = setInterval(() => setPrayerTick((t) => t + 1), 30_000);
     const slow = setInterval(() => void check(), 15_000);
     return () => { cancelled = true; clearInterval(fast); clearInterval(slow); };
     // eslint-disable-next-line react-hooks/exhaustive-deps

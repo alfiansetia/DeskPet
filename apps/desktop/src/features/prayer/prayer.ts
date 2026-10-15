@@ -101,14 +101,14 @@ export function getUpcomingReminder(
   return null;
 }
 
+/** Countdown presisi menit tanpa detik (pill pendek): "45 mnt", "1 jam", "1 jam 2 mnt". */
 export function formatCountdown(ms: number): string {
-  if (ms < 0) ms = 0;
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  const p = (n: number) => String(n).padStart(2, "0");
-  return h > 0 ? `${h}:${p(m)}:${p(ss)}` : `${p(m)}:${p(ss)}`;
+  if (ms <= 0) return "0 mnt";
+  const mins = Math.max(1, Math.ceil(ms / 60_000));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h <= 0) return `${m} mnt`;
+  return m === 0 ? `${h} jam` : `${h} jam ${m} mnt`;
 }
 
 export function alertKey(ymd: string, name: string): string {

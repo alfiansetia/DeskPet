@@ -54,7 +54,7 @@ export interface CalEvent {
 
 export interface Automation {
   id: string; name: string; summary: string;
-  trigger: "weekday_morning" | "reminder_due" | "friday_review" | "before_event";
+  trigger: "weekday_morning" | "reminder_due" | "friday_review" | "before_event" | "task_nudge";
   enabled: boolean; createdAt: string; lastRunAt?: string | null;
 }
 
@@ -308,7 +308,21 @@ export function defaultAutomations(): Automation[] {
     { id: "auto_morning", name: "Ringkasan pagi", summary: "Tiap Senin–Jumat 09:00: tampilkan tugas hari ini.", trigger: "weekday_morning", enabled: true, createdAt: t },
     { id: "auto_speak", name: "Bacakan pengingat", summary: "Saat pengingat jatuh tempo: notifikasi + animasi + TTS (jika diizinkan).", trigger: "reminder_due", enabled: true, createdAt: t },
     { id: "auto_friday", name: "Review Jumat", summary: "Tiap Jumat 16:00: buat task review mingguan.", trigger: "friday_review", enabled: false, createdAt: t },
+    { id: "auto_task_nudge", name: "Ingatkan tugas terbuka", summary: "Tiap 13:00 & 17:30 bila ada tugas belum selesai (maks 1x/slot/hari).", trigger: "task_nudge", enabled: true, createdAt: t },
   ];
+}
+
+/**
+ * Migrasi otomasi: user lama yang simpanannya belum punya id default baru
+ * (mis. auto_task_nudge) tetap kebagian tanpa menghapus setting mereka.
+ * Idempotent, dipanggil sekali saat boot primary.
+ */
+export function ensureAutomationDefaults(): void {
+  const cur = store.automations.all();
+  const have = new Set(cur.map((a) => a.id));
+  const missing = defaultAutomations().filter((d) => !have.has(d.id));
+  if (missing.length === 0) return;
+  store.automations.save([...cur, ...missing]);
 }
 
 /** Full local backup (explicit user action, PRD §5.4). */

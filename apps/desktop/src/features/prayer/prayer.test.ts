@@ -44,9 +44,11 @@ describe("prayer helpers", () => {
     expect(getUpcomingReminder(day, now, 0)).toBeNull();
   });
 
-  it("formatCountdown HH:MM:SS", () => {
-    expect(formatCountdown(90_000)).toBe("01:30");
-    expect(formatCountdown(3_661_000)).toBe("1:01:01");
+  it("formatCountdown presisi menit tanpa detik", () => {
+    expect(formatCountdown(90_000)).toBe("2 mnt");
+    expect(formatCountdown(3_661_000)).toBe("1 jam 2 mnt");
+    expect(formatCountdown(3_600_000)).toBe("1 jam");
+    expect(formatCountdown(0)).toBe("0 mnt");
   });
 });
 
