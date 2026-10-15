@@ -1,0 +1,83 @@
+# Release DeskPet — Windows & macOS (Tauri 2)
+#
+# Cara pakai: commit + push, lalu buat tag dan push tag itu.
+# Workflow ini otomatis build di runner asli tiap OS, lalu membuat
+# DRAFT release berisi file installer sebagai asset.
+#
+#   git tag v0.1.0
+#   git push origin v0.1.0
+#
+# Hasil: draft release "v0.1.0" di halaman Releases berisi:
+#   Windows : DeskPet_0.1.0_x64-setup.exe (NSIS) + DeskPet_0.1.0_x64_en-US.msi
+#   macOS   : DeskPet_0.1.0_aarch64.dmg (Apple Silicon)
+#           + DeskPet_0.1.0_x86_64.dmg (Intel, job terpisah)
+#
+# Catatan jujur: bundle ini TIDAK di-sign/notarize (butuh sertifikat
+# berbayar + secrets). Windows SmartScreen / macOS Gatekeeper akan
+# menampilkan peringatan — itu normal untuk rilis unsigned, jelaskan
+# di catatan rilis (lihat .github/RELEASE_NOTES_v0.1.0.md).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: macos-14 # Apple Silicon (arm64)
+            target: aarch64-apple-darwin
+          - os: macos-13 # Intel (x64)
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Run tests (gate rilis)
+        run: npm run test:all
+
+      - name: Build + upload to draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: "DeskPet ${{ github.ref_name }}"
+          releaseBody: "Lihat CHANGELOG.md untuk detail. Bundle unsigned — lihat catatan instalasi di bawah."
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}

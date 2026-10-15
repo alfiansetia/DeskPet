@@ -203,6 +203,7 @@ npm run tauri build
 | [`docs/configuration.md`](./docs/configuration.md) | Referensi semua settings |
 | [`docs/architecture.md`](./docs/architecture.md) | Arsitektur + multi-pet + migrasi DB |
 | [`docs/build-windows-macos.md`](./docs/build-windows-macos.md) | Build, signing, smoke test |
+| [`docs/release-process.md`](./docs/release-process.md) | Cara rilis + asset download |
 | [`docs/testing.md`](./docs/testing.md) | Perintah + cakupan test |
 | [`docs/privacy.md`](./docs/privacy.md) | Jaminan privasi + tabel network |
 | [`docs/troubleshooting.md`](./docs/troubleshooting.md) | FAQ + perbaikan umum |
