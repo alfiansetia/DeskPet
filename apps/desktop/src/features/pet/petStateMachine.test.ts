@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { canTransitionTo, isValidPetState, PET_STATES, STATE_FRAMES } from "./petStateMachine";
 
 describe("petStateMachine (P1)", () => {
-  it("covers all 8 PRD states", () => {
-    expect(PET_STATES).toHaveLength(8);
-    for (const s of ["idle", "walk", "dragged", "react", "sleep", "speak", "reminder", "attention"]) {
+  it("covers all 8 PRD states + jump variant", () => {
+    expect(PET_STATES).toHaveLength(9);
+    for (const s of ["idle", "walk", "dragged", "react", "sleep", "speak", "reminder", "attention", "jump"]) {
       expect(isValidPetState(s)).toBe(true);
     }
   });
