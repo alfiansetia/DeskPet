@@ -49,4 +49,20 @@ describe("companions store (multi-pet B)", () => {
     saveCompanions(loadCompanions());
     expect(store.companions.all().length).toBe(1);
   });
+
+  it("resize updating companion scale (render memakai companion.scale)", () => {
+    // Regresi: slider/menu_resize wajib update companion.scale, bukan cuma
+    // settings.petScale — window merender me.scale (App.tsx).
+    const list = loadCompanions();
+    expect(list[0].scale).toBe(1);
+    const after = updateCompanion(MAIN_COMPANION_ID, { scale: 1.5 });
+    expect(after.find((c) => c.id === MAIN_COMPANION_ID)?.scale).toBe(1.5);
+    // Simulasi render App: companion.scale menang atas settings fallback.
+    const me = after.find((c) => c.id === MAIN_COMPANION_ID);
+    const rendered = me?.scale ?? 1;
+    expect(rendered).toBe(1.5);
+    // Clamp 0.5–2 via normalize.
+    const clamped = updateCompanion(MAIN_COMPANION_ID, { scale: 9 });
+    expect(clamped.find((c) => c.id === MAIN_COMPANION_ID)?.scale).toBeLessThanOrEqual(2);
+  });
 });

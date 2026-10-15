@@ -4,7 +4,7 @@
 use crate::actions::{ActionRequest, PermissionClass};
 use crate::companions::{
     companion_id_from_label, is_valid_companion_id, window_label_for, PetRegistry,
-    MAIN_COMPANION_ID, MAX_COMPANIONS,
+    MAIN_COMPANION_ID,
 };
 use crate::pet::PetState;
 use crate::settings::AppSettings;
@@ -175,53 +175,30 @@ pub fn companions_list(
 
 /// Spawn (atau fokus bila sudah ada) window untuk satu companion.
 /// Local-only: tanpa network, tanpa shell. ID divalidasi ketat; "main" = window `pet`.
+///
+/// WAJIB async + build di thread terpisah: di Windows, `build()` deadlock
+/// bila jalan di worker thread sync command (wry#583 — WebView2
+/// create_controller tidak pernah selesai, persis gejala "STILL WAITING on
+/// build()" di log). Deadlock itu juga mengganjal main thread sehingga SEMUA
+/// IPC window ikut macet: pet pertama freeze + setting/panel tidak bisa dibuka.
 #[tauri::command]
-pub fn companions_spawn(
+pub async fn companions_spawn(
     app: AppHandle,
     registry: State<'_, PetRegistry>,
     id: String,
 ) -> Result<serde_json::Value, String> {
-    if !is_valid_companion_id(&id) {
+    // Validasi cepat di sini agar ID jahat gagal seketika tanpa antre thread.
+    if !crate::companions::is_valid_companion_id(&id) {
         return Err("unknown companion id (rejected)".into());
     }
-    if id != MAIN_COMPANION_ID && registry.list().len() >= MAX_COMPANIONS {
-        return Err("companion limit reached (max 5)".into());
-    }
-    registry.ensure(&id);
-    let label = window_label_for(&id);
-    if let Some(w) = app.get_webview_window(&label) {
-        let _ = w.show();
-        let _ = w.set_focus();
-        return Ok(serde_json::json!({ "id": id, "label": label, "existed": true }));
-    }
-    // Posisi cascade dari window primary agar tidak menumpuk persis.
-    let offset: i32 = 60 * (app.webview_windows().len() as i32);
-    let (base_x, base_y) = app
-        .get_webview_window("pet")
-        .and_then(|w| w.outer_position().ok())
-        .map(|p| (p.x, p.y))
-        .unwrap_or((200, 200));
-    let win = tauri::WebviewWindowBuilder::new(
-        &app,
-        &label,
-        tauri::WebviewUrl::App("index.html".into()),
-    )
-    .title(format!("DeskPet {label}"))
-    .inner_size(170.0, 200.0)
-    .min_inner_size(80.0, 80.0)
-    .transparent(true)
-    .decorations(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .resizable(true)
-    .shadow(false)
-    .accept_first_mouse(true)
-    .position((base_x + offset).max(0) as f64, (base_y + offset).max(0) as f64)
-    .build()
-    .map_err(|e| e.to_string())?;
-    let _ = win.show();
-    let _ = app.emit("deskpet://companions-changed", "spawn");
-    Ok(serde_json::json!({ "id": id, "label": label, "existed": false }))
+    // registry di-ensure di helper via try_state; State di sini dipertahankan
+    // agar command gagal eksplisit bila state belum di-manage.
+    let _ = registry.get(&id);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::companions::spawn_companion_window(&app, &id)
+    })
+    .await
+    .map_err(|e| format!("spawn task failed: {e}"))?
 }
 
 /// Tutup + hapus window companion sekunder. Primary ("main") ditolak.
@@ -261,6 +238,22 @@ pub fn companions_owner_of(app: AppHandle) -> String {
         .cloned()
         .unwrap_or_else(|| "pet".to_string());
     companion_id_from_label(&first)
+}
+
+/// Path file log aplikasi (debug + release). Local-only.
+/// Dipakai tab Log untuk menampilkan path + tombol buka file.
+#[tauri::command]
+pub fn log_path(app: tauri::AppHandle) -> Result<String, String> {
+    crate::applog::log_path(&app)
+        .map(|p| p.to_string_lossy().into_owned())
+        .ok_or_else(|| "no app data dir".to_string())
+}
+
+/// Isi N baris terakhir file log (untuk tab Log). String kosong bila file
+/// belum ada (mis. baru pertama jalan). Tidak pernah error.
+#[tauri::command]
+pub fn log_read(app: tauri::AppHandle, max_lines: Option<usize>) -> String {
+    crate::applog::read_tail(&app, max_lines.unwrap_or(crate::applog::TAIL_DEFAULT))
 }
 
 /// Durable mirror of the FRONTEND settings object (opaque JSON blob).

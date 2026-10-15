@@ -12,12 +12,12 @@ import {
   TRANSIENT_STATES, TRANSIENT_TIMEOUT_MS, canTransitionTo, type PetState,
 } from "./features/pet/petStateMachine";
 import {
-  loadCompanions, loadSettings, saveCompanions, saveSettings, store, uid,
+  loadCompanions, loadSettings, saveCompanions, saveSettings, store, uid, updateCompanion,
   type Companion, type DeskSettings, type WanderPace, type WanderDirection,
 } from "./lib/store";
 import {
   MAIN_COMPANION_ID, companionIdFromWindowLabel, phaseDelayMsFor, resolvePresenterFor,
-  slotPeriodJitterMsFor, slotPhaseFor,
+  slotPeriodJitterMsFor, slotPhaseFor, spawnCompanionWindow,
 } from "./features/pet/companions";
 import { pullBackendSettings, pushBackendSettings } from "./lib/settingsSync";
 import { TIMER_KEY, clearSharedTimer, loadSharedTimer, saveSharedTimer, sharedTimerLeft } from "./lib/timerShared";
@@ -168,6 +168,25 @@ export default function App() {
           .catch(() => { if (!cancelled) setBackend("web-preview"); });
       });
     invoke<boolean>("pet_is_visible").then((v) => { if (!cancelled) setVisible(v); }).catch(() => {});
+    // Multi-pet B: kembalikan window sekunder setelah restart. Hanya primary
+    // yang melakukannya (window sekunder belum ada saat boot, jadi aman dari
+    // duplikat). Spawn idempoten: window yang sudah ada hanya di-show + fokus.
+    // Sekuensial (bukan paralel) agar posisi cascade dihitung berurutan.
+    // Timeout 12 dtk per window: satu window macet (build tidak balik) tidak
+    // boleh menggantung boot — dilewati diam-diam, bisa dicoba lagi manual.
+    if (myId === MAIN_COMPANION_ID) {
+      void (async () => {
+        try {
+          const list = loadCompanions();
+          for (const c of list) {
+            if (cancelled || c.id === MAIN_COMPANION_ID) continue;
+            const res = await spawnCompanionWindow(c.id, 12_000);
+            if (cancelled) return;
+            void res;
+          }
+        } catch { /* web preview: abaikan */ }
+      })();
+    }
     pullBackendSettings().then((remote) => {
       if (cancelled) return;
       if (remote) {
@@ -786,6 +805,21 @@ export default function App() {
   const onMenuPick = useCallback(async (a: MenuAction) => {
     setMenu(null);
     const clampScale = (v: number) => Math.min(2, Math.max(0.5, Math.round(v * 10) / 10));
+    // Resize milik companion PEMILIK WINDOW ini (yang dirender = me.scale).
+    // settings.petScale ikut disync sebagai default global + agar slider
+    // Pengaturan menampilkan nilai yang benar.
+    const setOwnScale = (v: number) => {
+      const id = ownIdRef.current;
+      const next = clampScale(v);
+      setCompanions(updateCompanion(id, { scale: next }));
+      try {
+        void Promise.resolve(emit("deskpet://companions-changed", "changed")).catch(() => { /* preview */ });
+      } catch { /* preview */ }
+      setSettings((s) => ({ ...s, petScale: next }));
+    };
+    const curScale = () =>
+      companionsRef.current.find((c) => c.id === ownIdRef.current)?.scale
+      ?? settingsRef.current.petScale ?? 1;
     switch (a) {
       case "timer-5": timerStart(5 * 60, "Fokus"); break;
       case "timer-15": timerStart(15 * 60, "Fokus"); break;
@@ -823,9 +857,9 @@ export default function App() {
       }
       case "toggle-top": setSettings((s) => ({ ...s, alwaysOnTop: !s.alwaysOnTop })); break;
       case "toggle-motion": setSettings((s) => ({ ...s, reducedMotion: !s.reducedMotion })); break;
-      case "scale-up": setSettings((s) => ({ ...s, petScale: clampScale((s.petScale ?? 1) + 0.1) })); break;
-      case "scale-down": setSettings((s) => ({ ...s, petScale: clampScale((s.petScale ?? 1) - 0.1) })); break;
-      case "scale-reset": setSettings((s) => ({ ...s, petScale: 1 })); break;
+      case "scale-up": setOwnScale(curScale() + 0.1); break;
+      case "scale-down": setOwnScale(curScale() - 0.1); break;
+      case "scale-reset": setOwnScale(1); break;
       case "sleep": stopSpeech(); void requestState("sleep"); break;
       case "wake": void requestState("idle"); break;
       case "hide": void setVisibleBoth(false); break;

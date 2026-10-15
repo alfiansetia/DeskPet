@@ -1,5 +1,6 @@
 /** Local-first persistent store (PRD §8). localStorage-backed; Rust/SQLite mirror planned. */
 import { loadJSON, saveJSON } from "./storage";
+import { notifyDataChanged } from "./sharedData";
 import { nowUTC } from "./time";
 import { characterIdFor, isPetSpecies, type PetSpecies } from "../features/pet/species";
 import { normalizeStats, type PetStats } from "../features/pet/care";
@@ -21,6 +22,9 @@ export interface Reminder {
   dueAt: string; timezone: string; recurrence: RecurrenceRule;
   status: ReminderStatus; snoozeUntil?: string | null;
   lastTriggeredAt?: string | null; createdAt: string; updatedAt: string;
+  /** Info display saja ("dibuat dari window X"). Single shared DB: TIDAK
+   *  dipakai sebagai filter kepemilikan — semua window melihat data yang sama. */
+  createdBy?: string | null;
 }
 
 export type TodoStatus = "open" | "in_progress" | "completed";
@@ -29,17 +33,23 @@ export interface Todo {
   status: TodoStatus; priority: number; dueAt?: string | null;
   reminderId?: string | null; createdAt: string; updatedAt: string;
   completedAt?: string | null;
+  /** Info display saja, lihat Reminder.createdBy. */
+  createdBy?: string | null;
 }
 
 export interface Note {
   id: string; title: string; content: string;
   createdAt: string; updatedAt: string; deletedAt?: string | null;
+  /** Info display saja, lihat Reminder.createdBy. */
+  createdBy?: string | null;
 }
 
 export interface CalEvent {
   id: string; title: string; startAt: string; endAt: string;
   location?: string; source: "local" | "google";
   createdAt: string;
+  /** Info display saja, lihat Reminder.createdBy. */
+  createdBy?: string | null;
 }
 
 export interface Automation {
@@ -59,6 +69,16 @@ export interface AuditEntry {
 
 export function uid(prefix = "id"): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Normalisasi info `createdBy`: "main" / `c_*` valid dipertahankan,
+ *  nilai asing -> null (data lama tanpa field -> null). Tidak pernah throw. */
+export function normalizeCreatedBy(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim().slice(0, 40);
+  if (s === MAIN_COMPANION_ID) return s;
+  if (/^c_[a-z0-9]{1,32}$/.test(s)) return s;
+  return null;
 }
 
 const K = {
@@ -191,27 +211,27 @@ export const store = {
   reminders: {
     key: K.reminders,
     all(): Reminder[] { return loadJSON<Reminder[]>(K.reminders, []); },
-    save(v: Reminder[]) { saveJSON(K.reminders, v); },
+    save(v: Reminder[]) { saveJSON(K.reminders, v); notifyDataChanged("reminders"); },
   },
   todos: {
     key: K.todos,
     all(): Todo[] { return loadJSON<Todo[]>(K.todos, []); },
-    save(v: Todo[]) { saveJSON(K.todos, v); },
+    save(v: Todo[]) { saveJSON(K.todos, v); notifyDataChanged("todos"); },
   },
   notes: {
     key: K.notes,
     all(): Note[] { return loadJSON<Note[]>(K.notes, []); },
-    save(v: Note[]) { saveJSON(K.notes, v); },
+    save(v: Note[]) { saveJSON(K.notes, v); notifyDataChanged("notes"); },
   },
   events: {
     key: K.events,
     all(): CalEvent[] { return loadJSON<CalEvent[]>(K.events, []); },
-    save(v: CalEvent[]) { saveJSON(K.events, v); },
+    save(v: CalEvent[]) { saveJSON(K.events, v); notifyDataChanged("events"); },
   },
   automations: {
     key: K.automations,
     all(): Automation[] { return loadJSON<Automation[]>(K.automations, defaultAutomations()); },
-    save(v: Automation[]) { saveJSON(K.automations, v); },
+    save(v: Automation[]) { saveJSON(K.automations, v); notifyDataChanged("automations"); },
   },
   audit: {
     key: K.audit,
@@ -220,8 +240,9 @@ export const store = {
       const all = loadJSON<AuditEntry[]>(K.audit, []);
       all.unshift(e);
       saveJSON(K.audit, all.slice(0, 200));
+      notifyDataChanged("audit");
     },
-    clear() { saveJSON(K.audit, []); },
+    clear() { saveJSON(K.audit, []); notifyDataChanged("audit"); },
   },
   companions: {
     key: K.companions,

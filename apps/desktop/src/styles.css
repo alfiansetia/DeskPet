@@ -248,11 +248,12 @@ html, body, #root {
   border: 1px solid rgba(34,34,58,0.12); box-shadow: 0 16px 40px rgba(34,34,58,0.25);
   display: flex; flex-direction: column; overflow: hidden;
 }
-.dp-panel-head { display: flex; align-items: center; border-bottom: 1px solid rgba(34,34,58,0.1); padding: 4px; }
-.dp-tabs { display: flex; gap: 2px; flex: 1; }
-.dp-tab { border: 0; background: transparent; border-radius: 8px; padding: 6px 8px; font-size: 15px; cursor: pointer; }
+.dp-panel-head { display: flex; align-items: center; border-bottom: 1px solid rgba(34,34,58,0.1); padding: 4px; min-width: 0; }
+/* 11 tab tidak muat 384px: barisan tab scroll horizontal, tombol ✕ terkunci. */
+.dp-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.dp-tab { border: 0; background: transparent; border-radius: 8px; padding: 6px 8px; font-size: 15px; cursor: pointer; flex: none; }
 .dp-tab.on { background: #efedff; }
-.dp-x { border: 0; background: transparent; cursor: pointer; padding: 6px 10px; border-radius: 8px; }
+.dp-x { border: 0; background: transparent; cursor: pointer; padding: 6px 10px; border-radius: 8px; flex: none; }
 .dp-panel-body { padding: 10px 12px; overflow: auto; font-size: 13px; color: var(--dp-text); }
 .dp-muted { color: var(--dp-muted); font-size: 12px; }
 .dp-row { display: flex; gap: 6px; margin: 6px 0; }
@@ -297,6 +298,22 @@ html, body, #root {
 .dp-comp-toggles .dp-check { font-size: 12px; padding: 0; }
 .dp-comp-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; margin-top: 8px; align-items: end; }
 .dp-comp-add-btn { grid-column: 1 / -1; }
+
+/* Kalender bulanan lokal: grid 7 kolom muat di panel 384px. */
+.dp-cal-nav { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px; }
+.dp-cal-title { flex: 1; text-align: center; font-weight: 700; font-size: 13px; }
+.dp-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.dp-cal-dow { text-align: center; font-size: 11px; color: var(--dp-muted); padding: 2px 0; }
+.dp-cal-day { position: relative; border: 1px solid transparent; background: transparent; border-radius: 8px; min-height: 36px; font-size: 12px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 2px 0; color: var(--dp-text); }
+.dp-cal-day:hover { background: #f1efff; }
+.dp-cal-day.dim { opacity: 0.35; }
+.dp-cal-day.today { border-color: var(--dp-primary); font-weight: 700; }
+.dp-cal-day.sel { background: #efedff; border-color: var(--dp-primary); }
+.dp-cal-dots { display: flex; gap: 3px; height: 6px; align-items: center; }
+.dp-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex: none; }
+.dp-dot.rem { background: #e9a23b; }
+.dp-dot.ev { background: #3f9b78; }
+.dp-cal-legend { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
 
 /* Toasts */
 .dp-toasts { position: fixed; left: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 6px; z-index: 60; -webkit-app-region: no-drag; max-height: calc(100vh - 16px); overflow: auto; }

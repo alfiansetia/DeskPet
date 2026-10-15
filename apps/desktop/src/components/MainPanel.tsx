@@ -1,11 +1,14 @@
 /** MainPanel: all PRD surfaces in one expandable window (P2–P4 local-first). */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { parseCommand, validateAction, type ActionRequest } from "../features/assistant/parser";
-import { addCompanion, loadCompanions, removeCompanion, saveCompanions, updateCompanion, exportBackup, importBackup, loadSettings, saveSettings, store, uid, MAIN_COMPANION_ID, MAX_COMPANIONS, type Automation, type CalEvent, type Companion, type DeskSettings, type Note, type RecurrenceRule, type Reminder, type Todo, type WanderPace, type WanderDirection } from "../lib/store";
-import { COMPANION_ROLES, defaultNameFor, normalizeCompanionList, type CompanionRole } from "../features/pet/companions";
+import { addCompanion, loadCompanions, normalizeCreatedBy, removeCompanion, saveCompanions, updateCompanion, exportBackup, importBackup, loadSettings, saveSettings, store, uid, MAIN_COMPANION_ID, MAX_COMPANIONS, type Automation, type CalEvent, type Companion, type DeskSettings, type Note, type RecurrenceRule, type Reminder, type Todo, type WanderPace, type WanderDirection } from "../lib/store";
+import { COMPANION_ROLES, defaultNameFor, normalizeCompanionList, spawnCompanionWindow, type CompanionRole } from "../features/pet/companions";
+import { getAppLogPath, readAppLog, revealAppLog } from "../lib/appLog";
 import { formatDue, isQuietHours, nextOccurrence, parseDurationSeconds, parseNaturalDateTime, toUTCISOString } from "../lib/time";
+import { subscribeDataChanged } from "../lib/sharedData";
+import { buildMonthGrid, groupByDay, monthLabel, WEEKDAYS_ID, ymdLocal } from "../features/calendar/calendar";
 import { recurrenceLabel, relDue, reminderBadge, splitReminders } from "../lib/reminders";
 import { Icon, type IconName } from "./Icon";
 import { toast } from "../lib/notify";
@@ -16,7 +19,7 @@ import { HATS, unlockedHats } from "../features/pet/hats";
 import { PrayerView } from "../features/prayer/PrayerView";
 import { AutostartView } from "../features/startup/AutostartView";
 
-export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "settings" | "log";
+export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "companions" | "settings" | "log";
 
 interface Props {
   tab: PanelTab;
@@ -40,7 +43,8 @@ const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
   { id: "tasks", icon: "task", title: "Tugas" }, { id: "notes", icon: "note", title: "Catatan" },
   { id: "timer", icon: "timer", title: "Timer" }, { id: "calendar", icon: "calendar", title: "Kalender" },
   { id: "prayer", icon: "moonStar", title: "Jadwal Sholat" },
-  { id: "auto", icon: "settings", title: "Otomatisasi" }, { id: "settings", icon: "sliders", title: "Pengaturan" },
+  { id: "auto", icon: "settings", title: "Otomatisasi" }, { id: "companions", icon: "star", title: "Kawan" },
+  { id: "settings", icon: "sliders", title: "Pengaturan" },
   { id: "log", icon: "history", title: "Log" },
 ];
 
@@ -65,14 +69,15 @@ export function MainPanel(p: Props) {
         <button className="dp-x" onClick={p.onClose} title="Tutup (Esc)"><Icon name="x" size={14} /></button>
       </div>
       <div className="dp-panel-body">
-        {p.tab === "assistant" && <Assistant onAction={p.bump} timerStart={p.timerStart} />}
-        {p.tab === "reminders" && <Reminders bump={p.bump} rkey={p.refreshKey} settings={p.settings} />}
-        {p.tab === "tasks" && <Tasks bump={p.bump} rkey={p.refreshKey} />}
-        {p.tab === "notes" && <Notes bump={p.bump} rkey={p.refreshKey} />}
+        {p.tab === "assistant" && <Assistant onAction={p.bump} timerStart={p.timerStart} ownId={p.ownId} />}
+        {p.tab === "reminders" && <Reminders bump={p.bump} rkey={p.refreshKey} settings={p.settings} ownId={p.ownId} />}
+        {p.tab === "tasks" && <Tasks bump={p.bump} rkey={p.refreshKey} ownId={p.ownId} />}
+        {p.tab === "notes" && <Notes bump={p.bump} rkey={p.refreshKey} ownId={p.ownId} />}
         {p.tab === "timer" && <TimerView timerStart={p.timerStart} timerLeft={p.timerLeft} settings={p.settings} setSettings={p.setSettings} />}
-        {p.tab === "calendar" && <Calendar bump={p.bump} rkey={p.refreshKey} />}
+        {p.tab === "calendar" && <Calendar bump={p.bump} rkey={p.refreshKey} ownId={p.ownId} />}
         {p.tab === "prayer" && <PrayerView settings={p.settings} setSettings={p.setSettings} bump={p.bump} />}
         {p.tab === "auto" && <Automations bump={p.bump} rkey={p.refreshKey} />}
+        {p.tab === "companions" && <CompanionsView companions={companions} setCompanions={setCompanions} />}
         {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} onCare={p.onCare} companions={companions} setCompanions={setCompanions} ownId={p.ownId} />}
         {p.tab === "log" && <LogView />}
       </div>
@@ -81,7 +86,7 @@ export function MainPanel(p: Props) {
 }
 
 /* ---------------- Assistant ---------------- */
-function Assistant({ onAction, timerStart }: { onAction: () => void; timerStart: (s: number, l?: string) => void }) {
+function Assistant({ onAction, timerStart, ownId }: { onAction: () => void; timerStart: (s: number, l?: string) => void; ownId?: string }) {
   const [q, setQ] = useState("");
   const [last, setLast] = useState<{ preview: string; needsConfirm: boolean; action: ActionRequest } | null>(null);
   const [log, setLog] = useState<string[]>([]);
@@ -100,7 +105,7 @@ function Assistant({ onAction, timerStart }: { onAction: () => void; timerStart:
       store.audit.push({ id: uid("a"), actionId: actionId(parsed.action), source: "assistant", status: "previewed", confirmationRequired: true, createdAt: new Date().toISOString() });
       return;
     }
-    execute(parsed.action, timerStart);
+    execute(parsed.action, timerStart, ownId);
     store.audit.push({ id: uid("a"), actionId: actionId(parsed.action), source: "assistant", status: confirm ? "confirmed" : "executed", confirmationRequired: parsed.needsConfirm, createdAt: new Date().toISOString() });
     setLog((l) => [`OK: ${parsed.preview}`, ...l].slice(0, 8));
     setLast(null); setQ(""); onAction();
@@ -118,7 +123,7 @@ function Assistant({ onAction, timerStart }: { onAction: () => void; timerStart:
       {last?.needsConfirm && (
         <div className="dp-confirm">
           <div>{last.preview}</div>
-          <div className="dp-row"><button className="dp-btn primary" onClick={() => { execute(last.action, timerStart); setLast(null); setQ(""); onAction(); }}>Konfirmasi</button>
+          <div className="dp-row"><button className="dp-btn primary" onClick={() => { execute(last.action, timerStart, ownId); setLast(null); setQ(""); onAction(); }}>Konfirmasi</button>
           <button className="dp-btn" onClick={() => setLast(null)}>Batal</button></div>
         </div>
       )}
@@ -132,35 +137,37 @@ function actionId(a: ActionRequest): string {
   return a.type === "unknown" ? "unknown" : a.type;
 }
 
-export function execute(a: ActionRequest, timerStart: (s: number, l?: string) => void): void {
+export function execute(a: ActionRequest, timerStart: (s: number, l?: string) => void, ownId?: string): void {
   const t = new Date().toISOString();
+  // Single shared DB: createdBy hanya info display, bukan kepemilikan.
+  const createdBy = normalizeCreatedBy(ownId);
   if (a.type === "reminder.create") {
     const all = store.reminders.all();
-    all.unshift({ id: uid("r"), title: a.title, dueAt: a.dueAt, timezone: a.timezone, recurrence: "none", status: "active", createdAt: t, updatedAt: t });
+    all.unshift({ id: uid("r"), title: a.title, dueAt: a.dueAt, timezone: a.timezone, recurrence: "none", status: "active", createdAt: t, updatedAt: t, createdBy });
     store.reminders.save(all);
     toast("Pengingat dibuat", a.title, "success");
   } else if (a.type === "todo.create") {
     const all = store.todos.all();
-    all.unshift({ id: uid("t"), title: a.title, status: "open", priority: 0, dueAt: a.dueAt ?? null, createdAt: t, updatedAt: t });
+    all.unshift({ id: uid("t"), title: a.title, status: "open", priority: 0, dueAt: a.dueAt ?? null, createdAt: t, updatedAt: t, createdBy });
     store.todos.save(all);
     toast("Tugas ditambah", a.title, "success");
   } else if (a.type === "note.create") {
     const all = store.notes.all();
-    all.unshift({ id: uid("n"), title: a.title, content: a.content, createdAt: t, updatedAt: t });
+    all.unshift({ id: uid("n"), title: a.title, content: a.content, createdAt: t, updatedAt: t, createdBy });
     store.notes.save(all);
     toast("Catatan dibuat", a.title, "success");
   } else if (a.type === "timer.start") {
     timerStart(a.durationSeconds, a.label);
   } else if (a.type === "calendar.create") {
     const all = store.events.all();
-    all.unshift({ id: uid("e"), title: a.title, startAt: a.startAt, endAt: a.endAt, source: "local", createdAt: t });
+    all.unshift({ id: uid("e"), title: a.title, startAt: a.startAt, endAt: a.endAt, source: "local", createdAt: t, createdBy });
     store.events.save(all);
     toast("Acara dibuat", a.title, "success");
   }
 }
 
 /* ---------------- Reminders ---------------- */
-function Reminders({ bump, rkey, settings }: { bump: () => void; rkey: number; settings: DeskSettings }) {
+function Reminders({ bump, rkey, settings, ownId }: { bump: () => void; rkey: number; settings: DeskSettings; ownId?: string }) {
   const [items, setItems] = useState<Reminder[]>(() => store.reminders.all());
   const [title, setTitle] = useState("");
   const [when, setWhen] = useState("");
@@ -168,6 +175,8 @@ function Reminders({ bump, rkey, settings }: { bump: () => void; rkey: number; s
   const [showHistory, setShowHistory] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { setItems(store.reminders.all()); }, [rkey]);
+  // Single shared DB: perubahan dari window lain langsung tampil di sini.
+  useEffect(() => subscribeDataChanged("reminders", () => setItems(store.reminders.all())), []);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
@@ -180,7 +189,7 @@ function Reminders({ bump, rkey, settings }: { bump: () => void; rkey: number; s
     if (!title.trim()) { toast("Judul masih kosong", "Isi dulu mau diingatkan apa.", "error"); return; }
     if (!due || Number.isNaN(due.getTime())) { toast("Waktunya belum jelas", "Contoh: besok jam 9 pagi · senin 16:30 · dalam 25 menit.", "error"); return; }
     const t = new Date().toISOString();
-    const r: Reminder = { id: uid("r"), title: title.trim(), dueAt: toUTCISOString(due), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta", recurrence: rec, status: "active", createdAt: t, updatedAt: t };
+    const r: Reminder = { id: uid("r"), title: title.trim(), dueAt: toUTCISOString(due), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jakarta", recurrence: rec, status: "active", createdAt: t, updatedAt: t, createdBy: normalizeCreatedBy(ownId) };
     const all = [r, ...store.reminders.all()];
     store.reminders.save(all); setItems(all); setTitle(""); setWhen(""); setRec("none"); bump();
     toast("Pengingat dibuat", `${r.title} · ${formatDue(r.dueAt)}`, "success");
@@ -293,17 +302,18 @@ function Reminders({ bump, rkey, settings }: { bump: () => void; rkey: number; s
 }
 
 /* ---------------- Tasks ---------------- */
-function Tasks({ bump, rkey }: { bump: () => void; rkey: number }) {
+function Tasks({ bump, rkey, ownId }: { bump: () => void; rkey: number; ownId?: string }) {
   const [items, setItems] = useState<Todo[]>(() => store.todos.all());
   const [title, setTitle] = useState("");
   const [filter, setFilter] = useState<"all" | "open" | "completed" | "today">("all");
   const [q, setQ] = useState("");
   useEffect(() => { setItems(store.todos.all()); }, [rkey]);
+  useEffect(() => subscribeDataChanged("todos", () => setItems(store.todos.all())), []);
 
   const add = () => {
     if (!title.trim()) return;
     const t = new Date().toISOString();
-    const all = [{ id: uid("t"), title: title.trim(), status: "open" as const, priority: 0, createdAt: t, updatedAt: t }, ...store.todos.all()];
+    const all = [{ id: uid("t"), title: title.trim(), status: "open" as const, priority: 0, createdAt: t, updatedAt: t, createdBy: normalizeCreatedBy(ownId) }, ...store.todos.all()];
     store.todos.save(all); setItems(all); setTitle(""); bump();
   };
   const mutate = (id: string, fn: (x: Todo) => Todo) => {
@@ -351,7 +361,7 @@ function Tasks({ bump, rkey }: { bump: () => void; rkey: number }) {
 }
 
 /* ---------------- Notes ---------------- */
-function Notes({ bump, rkey }: { bump: () => void; rkey: number }) {
+function Notes({ bump, rkey, ownId }: { bump: () => void; rkey: number; ownId?: string }) {
   const [items, setItems] = useState<Note[]>(() => store.notes.all());
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<string | null>(null);
@@ -359,13 +369,14 @@ function Notes({ bump, rkey }: { bump: () => void; rkey: number }) {
   const [saved, setSaved] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => { setItems(store.notes.all()); }, [rkey]);
+  useEffect(() => subscribeDataChanged("notes", () => setItems(store.notes.all())), []);
 
   const active = items.find((n) => n.id === sel && !n.deletedAt) ?? null;
   useEffect(() => { setDraft(active?.content ?? ""); }, [sel]); // eslint-disable-line
 
   const create = () => {
     const t = new Date().toISOString();
-    const n: Note = { id: uid("n"), title: "Catatan baru", content: "", createdAt: t, updatedAt: t };
+    const n: Note = { id: uid("n"), title: "Catatan baru", content: "", createdAt: t, updatedAt: t, createdBy: normalizeCreatedBy(ownId) };
     const all = [n, ...store.notes.all()];
     store.notes.save(all); setItems(all); setSel(n.id); bump();
   };
@@ -449,30 +460,127 @@ function TimerView({ timerStart, timerLeft, settings, setSettings }: {
   );
 }
 
-/* ---------------- Calendar (local + Google stub) ---------------- */
-function Calendar({ bump, rkey }: { bump: () => void; rkey: number }) {
-  const [items, setItems] = useState<CalEvent[]>(() => store.events.all());
+/* ---------------- Calendar (bulanan lokal + Google stub) ---------------- */
+function Calendar({ bump, rkey, ownId }: { bump: () => void; rkey: number; ownId?: string }) {
+  const [events, setEvents] = useState<CalEvent[]>(() => store.events.all());
+  const [reminders, setReminders] = useState<Reminder[]>(() => store.reminders.all());
+  const now0 = new Date();
+  const [year, setYear] = useState(now0.getFullYear());
+  const [month, setMonth] = useState(now0.getMonth());
+  const [sel, setSel] = useState<string>(() => ymdLocal(now0));
   const [title, setTitle] = useState("");
   const [when, setWhen] = useState("");
-  useEffect(() => { setItems(store.events.all()); }, [rkey]);
+  const reload = () => { setEvents(store.events.all()); setReminders(store.reminders.all()); };
+  useEffect(() => { reload(); }, [rkey]);
+  useEffect(() => subscribeDataChanged(["events", "reminders"], reload), []);
+
+  // Single shared DB: pengingat (aktif/ditunda) + acara tampil di tanggalnya.
+  const upcoming = useMemo(
+    () => reminders.filter((r) => r.status === "active" || r.status === "snoozed"),
+    [reminders],
+  );
+  const remByDay = useMemo(() => groupByDay(upcoming, (r) => r.snoozeUntil ?? r.dueAt), [upcoming]);
+  const evByDay = useMemo(() => groupByDay(events, (e) => e.startAt), [events]);
+  const cells = useMemo(() => buildMonthGrid(year, month), [year, month]);
+  const todayYmd = ymdLocal(new Date());
+  const selRems = remByDay.get(sel) ?? [];
+  const selEvs = evByDay.get(sel) ?? [];
+  const selDate = (() => {
+    const [y, m, d] = sel.split("-").map(Number);
+    return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" });
+  })();
+
+  const shiftMonth = (delta: number) => {
+    const d = new Date(year, month + delta, 1);
+    setYear(d.getFullYear()); setMonth(d.getMonth());
+  };
+  const goToday = () => {
+    const t = new Date();
+    setYear(t.getFullYear()); setMonth(t.getMonth()); setSel(ymdLocal(t));
+  };
+
   const add = () => {
     const start = parseNaturalDateTime(when) ?? (when ? new Date(when) : null);
     if (!title.trim() || !start || Number.isNaN(start.getTime())) { toast("Isi judul + waktu valid", undefined, "error"); return; }
     const end = new Date(start.getTime() + 3600000);
     const t = new Date().toISOString();
-    const all = [{ id: uid("e"), title: title.trim(), startAt: toUTCISOString(start), endAt: toUTCISOString(end), source: "local" as const, createdAt: t }, ...store.events.all()];
-    store.events.save(all); setItems(all); setTitle(""); setWhen(""); bump();
+    const all = [{ id: uid("e"), title: title.trim(), startAt: toUTCISOString(start), endAt: toUTCISOString(end), source: "local" as const, createdAt: t, createdBy: normalizeCreatedBy(ownId) }, ...store.events.all()];
+    store.events.save(all); setEvents(all); setTitle(""); setWhen(""); bump();
   };
+  const syncSoon = () => {
+    toast("Sinkron Google segera hadir", "Saat ini kalender 100% lokal/offline.", "info");
+  };
+
   return (
     <div>
-      <div className="dp-warn"><span className="dp-line"><Icon name="info" size={12} /> Google Calendar belum terhubung (opt-in). Kalender lokal di bawah ini 100% offline. Menghubungkan Google butuh OAuth + scope sempit — sengaja belum diaktifkan agar privasi terjaga.</span></div>
+      <div className="dp-cal-nav">
+        <button className="dp-btn sm" onClick={() => shiftMonth(-1)} title="Bulan sebelumnya" aria-label="Bulan sebelumnya">‹</button>
+        <span className="dp-cal-title">{monthLabel(year, month)}</span>
+        <button className="dp-btn sm" onClick={() => shiftMonth(1)} title="Bulan berikutnya" aria-label="Bulan berikutnya">›</button>
+        <button className="dp-btn sm" onClick={goToday} title="Kembali ke hari ini">Hari ini</button>
+      </div>
+      <div className="dp-cal-grid" role="grid" aria-label={`Kalender ${monthLabel(year, month)}`}>
+        {WEEKDAYS_ID.map((d) => (
+          <div key={d} className="dp-cal-dow">{d}</div>
+        ))}
+        {cells.map((d) => {
+          const ymd = ymdLocal(d);
+          const inMonth = d.getMonth() === month;
+          const remCount = remByDay.get(ymd)?.length ?? 0;
+          const evCount = evByDay.get(ymd)?.length ?? 0;
+          const cls = ["dp-cal-day"];
+          if (!inMonth) cls.push("dim");
+          if (ymd === todayYmd) cls.push("today");
+          if (ymd === sel) cls.push("sel");
+          const hint = [remCount > 0 ? `${remCount} pengingat` : "", evCount > 0 ? `${evCount} acara` : ""].filter(Boolean).join(" · ");
+          return (
+            <button key={ymd} role="gridcell" aria-selected={ymd === sel}
+              aria-label={`${d.getDate()} ${hint}`}
+              title={hint || undefined}
+              className={cls.join(" ")} onClick={() => setSel(ymd)}>
+              <span>{d.getDate()}</span>
+              <span className="dp-cal-dots" aria-hidden="true">
+                {remCount > 0 && <span className="dp-dot rem" />}
+                {evCount > 0 && <span className="dp-dot ev" />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="dp-cal-legend dp-muted">
+        <span className="dp-line"><span className="dp-dot rem" /> pengingat</span>
+        {" · "}
+        <span className="dp-line"><span className="dp-dot ev" /> acara</span>
+      </div>
+
+      <div className="dp-section-title"><Icon name="calendar" size={13} /> {selDate} · {selRems.length + selEvs.length}</div>
+      <div className="dp-list">
+        {selRems.map((r) => (
+          <div key={r.id} className="dp-item">
+            <div><b><span className="dp-line"><Icon name="bell" size={11} /> {r.title}</span></b>
+              <div className="dp-muted">{formatDue(r.snoozeUntil ?? r.dueAt)}{r.recurrence !== "none" ? ` · ${r.recurrence}` : ""}</div></div>
+          </div>
+        ))}
+        {selEvs.map((e) => (
+          <div key={e.id} className="dp-item">
+            <div><b><span className="dp-line"><Icon name="clock" size={11} /> {e.title}</span></b>
+              <div className="dp-muted">{formatDue(e.startAt)} · {e.source}</div></div>
+            <button className="dp-btn sm" title="Hapus acara" onClick={() => { const all = store.events.all().filter((x) => x.id !== e.id); store.events.save(all); setEvents(all); bump(); }}><Icon name="trash" size={13} /></button>
+          </div>
+        ))}
+        {selRems.length + selEvs.length === 0 && <div className="dp-muted">Tidak ada pengingat/acara di tanggal ini.</div>}
+      </div>
+
+      <div className="dp-section-title"><Icon name="plus" size={13} /> Tambah acara</div>
       <div className="dp-row"><input className="dp-in" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Judul acara" aria-label="Judul acara" /></div>
       <div className="dp-row"><input className="dp-in" value={when} onChange={(e) => setWhen(e.target.value)} placeholder="senin jam 10" aria-label="Waktu acara" />
         <button className="dp-btn primary" onClick={add} title="Tambah acara"><Icon name="plus" size={14} /></button></div>
-      <div className="dp-list">{items.map((e) => (
-        <div key={e.id} className="dp-item"><div><b>{e.title}</b><div className="dp-muted">{formatDue(e.startAt)} · {e.source}</div></div>
-          <button className="dp-btn sm" title="Hapus acara" onClick={() => { const all = store.events.all().filter((x) => x.id !== e.id); store.events.save(all); setItems(all); bump(); }}><Icon name="trash" size={13} /></button></div>
-      ))}{items.length === 0 && <div className="dp-muted">Belum ada acara.</div>}</div>
+
+      <div className="dp-warn"><span className="dp-line"><Icon name="info" size={12} /> Google Calendar belum terhubung (opt-in). Kalender lokal di atas 100% offline. Menghubungkan Google butuh OAuth + scope sempit — sengaja belum diaktifkan agar privasi terjaga.</span></div>
+      <div className="dp-row" style={{ alignItems: "center" }}>
+        <button className="dp-btn sm" onClick={syncSoon} title="Segera hadir"><Icon name="rotate" size={13} /> Sinkronkan</button>
+        <span className="dp-muted">Terakhir sinkron: belum pernah · segera hadir</span>
+      </div>
     </div>
   );
 }
@@ -481,6 +589,7 @@ function Calendar({ bump, rkey }: { bump: () => void; rkey: number }) {
 function Automations({ bump, rkey }: { bump: () => void; rkey: number }) {
   const [items, setItems] = useState<Automation[]>(() => store.automations.all());
   useEffect(() => { setItems(store.automations.all()); }, [rkey]);
+  useEffect(() => subscribeDataChanged("automations", () => setItems(store.automations.all())), []);
   const toggle = (id: string) => {
     const all = store.automations.all().map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a));
     store.automations.save(all); setItems(all); bump();
@@ -588,10 +697,15 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
       toast("Tersimpan di daftar", "Mode preview web tidak bisa membuka window baru. Jalankan aplikasi desktop (npm run tauri dev) agar tiap karakter tampil di window-nya.", "info");
       return;
     }
-    try {
-      await invoke("companions_spawn", { id: added.id });
-    } catch (e) {
-      toast("Window gagal dibuka", `Karakter tersimpan, tapi window gagal dibuka (${e instanceof Error ? e.message : String(e)}). Coba lagi via tombol kaca pembesar di kartunya.`, "error");
+    const res = await spawnCompanionWindow(added.id);
+    if (!res.ok) {
+      toast(
+        res.timeout ? "Window macet" : "Window gagal dibuka",
+        res.timeout
+          ? "Pembuatan window tidak merespons >15 dtk. Restart app untuk membersihkan window hantu, lalu coba lagi."
+          : `Karakter tersimpan, tapi window gagal dibuka (${res.error ?? "unknown"}). Coba lagi via tombol kaca pembesar di kartunya.`,
+        "error",
+      );
       return;
     }
     toast(`${added.name} bergabung`, "Window baru terbuka untuk karakter ini.", "success");
@@ -602,10 +716,15 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
       toast("Preview web", "Multi-window hanya jalan di aplikasi desktop.", "info");
       return;
     }
-    try {
-      await invoke("companions_spawn", { id });
-    } catch (e) {
-      toast("Gagal membuka window", e instanceof Error ? e.message : String(e), "error");
+    const res = await spawnCompanionWindow(id);
+    if (!res.ok) {
+      toast(
+        res.timeout ? "Window macet" : "Gagal membuka window",
+        res.timeout
+          ? "Pembuatan window tidak merespons >15 dtk. Restart app untuk membersihkan window hantu, lalu coba lagi."
+          : (res.error ?? "unknown"),
+        "error",
+      );
     }
   };
 
@@ -621,6 +740,9 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
   };
 
   const doRole = (id: string, role: CompanionRole) => doPatch(id, { role });
+
+  const clampScale = (v: number) => Math.min(2, Math.max(0.5, Math.round(v * 10) / 10));
+  const doScale = (id: string, v: number) => doPatch(id, { scale: clampScale(v) });
 
   const doSpecies = (id: string, species: PetSpecies) => {
     const cur = list.find((c) => c.id === id);
@@ -698,6 +820,11 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
                   <input type="checkbox" checked={c.showMini !== false}
                     onChange={(e) => doPatch(c.id, { showMini: e.target.checked })} /> Mini
                 </label>
+                <span className="dp-check" title="Ukuran karakter ini">
+                  <button className="dp-btn sm" onClick={() => doScale(c.id, (c.scale ?? 1) - 0.1)} aria-label={`Perkecil ${c.name}`} title="Perkecil">−</button>
+                  <span className="dp-muted" style={{ fontSize: 12, minWidth: 38, textAlign: "center" }}>{Math.round((c.scale ?? 1) * 100)}%</span>
+                  <button className="dp-btn sm" onClick={() => doScale(c.id, (c.scale ?? 1) + 0.1)} aria-label={`Perbesar ${c.name}`} title="Perbesar">+</button>
+                </span>
               </div>
             </div>
           );
@@ -835,7 +962,7 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
         </select>
       </div>
       <div className="dp-field" style={{ marginTop: 2 }}>
-        <span className="dp-muted">Warna {target ? target.name : "karakter"} (window ini · lainnya via daftar Kawan di bawah)</span>
+        <span className="dp-muted">Warna {target ? target.name : "karakter"} (window ini · karakter lain via tab Kawan)</span>
           <div className="dp-swatches" role="radiogroup" aria-label="Warna karakter">
             {CAT_PALETTES.map((pal) => {
               const active = (target?.paletteId ?? settings.petPaletteId ?? "lavender") === pal.id;
@@ -881,15 +1008,14 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
           </div>
         </div>
       <CareView settings={settings} onCare={onCare} />
-      <CompanionsView companions={companions} setCompanions={setCompanions} />
       <HatView settings={settings} upd={upd} />
       <div className="dp-row" style={{ alignItems: "center" }}>
-        <label htmlFor="dp-scale" style={{ minWidth: 110 }}>Ukuran pet {Math.round((settings.petScale ?? 1) * 100)}%</label>
+        <label htmlFor="dp-scale" style={{ minWidth: 110 }}>Ukuran {target ? target.name : "pet"} {Math.round(((target?.scale ?? settings.petScale) ?? 1) * 100)}% (window ini)</label>
         <input id="dp-scale" type="range" min={0.5} max={2} step={0.1}
-          value={settings.petScale ?? 1}
-          onChange={(e) => upd({ petScale: Math.min(2, Math.max(0.5, Number(e.target.value))) })}
+          value={(target?.scale ?? settings.petScale) ?? 1}
+          onChange={(e) => { const v = Math.min(2, Math.max(0.5, Number(e.target.value))); upd({ petScale: v }); syncTarget({ scale: v }); }}
           aria-label="Ukuran pet" style={{ flex: 1 }} />
-        <button className="dp-btn sm" onClick={() => upd({ petScale: 1 })}>Reset</button>
+        <button className="dp-btn sm" onClick={() => { upd({ petScale: 1 }); syncTarget({ scale: 1 }); }}>Reset</button>
       </div>
       <label className="dp-check"><input type="checkbox" checked={settings.alwaysOnTop} onChange={(e) => upd({ alwaysOnTop: e.target.checked })} /> Selalu di atas</label>
       <label className="dp-check"><input type="checkbox" checked={settings.reducedMotion} onChange={(e) => upd({ reducedMotion: e.target.checked })} /> Gerakan tenang (reduced motion)</label>
@@ -910,14 +1036,43 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
   );
 }
 
-/* ---------------- Log (audit lokal) ---------------- */
+/* ---------------- Log (audit lokal + file log aplikasi) ---------------- */
 function LogView() {
   const [items, setItems] = useState(() => store.audit.all().slice(0, 50));
+  useEffect(() => subscribeDataChanged("audit", () => setItems(store.audit.all().slice(0, 50))), []);
   const clear = () => {
     store.audit.clear();
     setItems([]);
     toast("Log dihapus", "Audit lokal dikosongkan.", "info");
   };
+  // File log backend (debug + release): path + 200 baris terakhir.
+  const [logPath, setLogPath] = useState<string | null>(null);
+  const [logText, setLogText] = useState<string | null>(null);
+  const [logBusy, setLogBusy] = useState(false);
+  const loadFileLog = useCallback(async () => {
+    setLogBusy(true);
+    try {
+      const [p, t] = await Promise.all([getAppLogPath(), readAppLog(200)]);
+      setLogPath(p);
+      setLogText(t);
+    } finally {
+      setLogBusy(false);
+    }
+  }, []);
+  useEffect(() => { void loadFileLog(); }, [loadFileLog]);
+  const copyLogPath = useCallback(async () => {
+    if (!logPath) return;
+    try {
+      await navigator.clipboard.writeText(logPath);
+      toast("Path disalin", logPath, "success");
+    } catch {
+      toast("Gagal menyalin", "Salin manual dari teks path di atas.", "error");
+    }
+  }, [logPath]);
+  const openLogFile = useCallback(async () => {
+    const ok = await revealAppLog();
+    if (!ok) toast("Tidak bisa membuka", "Hanya di aplikasi desktop yang sudah punya file log.", "error");
+  }, []);
   return (
     <div>
       <div className="dp-muted">Catatan aksi & akses eksternal (metadata saja, tanpa isi privat). Hanya akses network sungguhan yang dicatat — sajian cache tidak masuk log.</div>
@@ -936,6 +1091,26 @@ function LogView() {
           </div>
         ))}
         {items.length === 0 && <div className="dp-muted">Belum ada aktivitas tercatat.</div>}
+      </div>
+      <div className="dp-field" style={{ marginTop: 10 }} data-testid="applog-field">
+        <span className="dp-muted">File log aplikasi (debug + release)</span>
+        <div className="dp-muted" data-testid="applog-path" style={{ wordBreak: "break-all", fontSize: 12 }}>
+          {logPath ?? (logBusy ? "Memuat…" : "Tidak tersedia di preview web.")}
+        </div>
+        <div className="dp-row" style={{ alignItems: "center" }}>
+          <button className="dp-btn sm" onClick={() => void loadFileLog()} disabled={logBusy} title="Muat ulang file log">
+            <Icon name="history" size={13} /> Muat ulang
+          </button>
+          <button className="dp-btn sm" onClick={() => void copyLogPath()} disabled={!logPath} title="Salin path file log">
+            <Icon name="info" size={13} /> Salin path
+          </button>
+          <button className="dp-btn sm" onClick={() => void openLogFile()} disabled={!logPath} title="Buka file log di Explorer/Finder">
+            <Icon name="zoomIn" size={13} /> Buka file
+          </button>
+        </div>
+        <pre className="dp-log" data-testid="applog-text" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 220, overflowY: "auto" }}>
+          {logText === null ? (logBusy ? "Memuat…" : "Belum ada isi (file log dibuat saat ada kejadian penting).") : logText === "" ? "File log masih kosong." : logText}
+        </pre>
       </div>
     </div>
   );

@@ -157,6 +157,41 @@ export function characterIdForCompanion(c: Pick<Companion, "species">): string {
 }
 
 /**
+ * Panggil `companions_spawn` dengan timeout.
+ *
+ * Konteks: backend membangun window di thread terpisah (wry#583 — build
+ * di sync command worker deadlock di Windows). Timeout di sini murni jaring
+ * pengaman: bila invoke tidak kembali dalam batas waktu, laporkan sebagai
+ * timeout agar UI tidak menggantung selamanya dan boot tetap jalan.
+ * Best-effort, tidak pernah throw.
+ */
+export async function spawnCompanionWindow(
+  id: string,
+  timeoutMs = 15_000,
+): Promise<{ ok: boolean; timeout: boolean; existed?: boolean; error?: string }> {
+  try {
+    const mod = await import("@tauri-apps/api/core").catch(() => null);
+    const invoke = (mod as { invoke?: (cmd: string, args?: unknown) => Promise<unknown> } | null)?.invoke;
+    if (!invoke) return { ok: false, timeout: false, error: "no-backend" };
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const res = (await Promise.race([
+        invoke("companions_spawn", { id }),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), timeoutMs);
+        }),
+      ])) as { existed?: boolean } | null;
+      if (!res) return { ok: false, timeout: true };
+      return { ok: true, timeout: false, existed: res.existed };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  } catch (e) {
+    return { ok: false, timeout: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
  * Pilih presenter untuk satu event terpusat berdasarkan role.
  * - role "decor" tidak pernah dipilih.
  * - kecocokan role dulu, lalu fallback companion pertama (non-decor), lalu pertama.

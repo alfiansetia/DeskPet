@@ -1,12 +1,12 @@
-/** Multi-pet B: kelola companion dari tab Pengaturan (tambah/role/hapus). */
+/** Multi-pet B: kelola companion dari tab Kawan (tambah/role/hapus). */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, afterEach } from "vitest";
 import { MainPanel } from "./MainPanel";
 import { loadCompanions, loadSettings, store } from "../lib/store";
 
-function renderSettings() {
+function renderCompanions() {
   return render(
-    <MainPanel tab="settings" setTab={() => {}} onClose={() => {}}
+    <MainPanel tab="companions" setTab={() => {}} onClose={() => {}}
       settings={loadSettings()} setSettings={() => {}}
       refreshKey={0} bump={() => {}} timerStart={() => {}} timerLeft={null} />
   );
@@ -15,15 +15,16 @@ function renderSettings() {
 describe("MainPanel companions (multi-pet B)", () => {
   afterEach(() => { cleanup(); localStorage.clear(); });
 
-  it("menampilkan 1 companion utama hasil migrasi", () => {
-    renderSettings();
+  it("tab Kawan ada di barisan tab + menampilkan 1 companion utama hasil migrasi", () => {
+    renderCompanions();
+    expect(screen.getByTitle("Kawan")).not.toBeNull();
     expect(screen.getByTestId("companions-field")).not.toBeNull();
     expect(loadCompanions()).toHaveLength(1);
     expect(screen.getByTestId("companions-list").textContent).toContain("Kucing");
   });
 
   it("tambah companion -> masuk daftar + tersimpan", async () => {
-    renderSettings();
+    renderCompanions();
     fireEvent.click(screen.getByTitle("Tambah karakter (window baru)"));
     await waitFor(() => {
       expect(loadCompanions()).toHaveLength(2);
@@ -32,7 +33,7 @@ describe("MainPanel companions (multi-pet B)", () => {
   });
 
   it("ganti role tersimpan dan berlaku", async () => {
-    renderSettings();
+    renderCompanions();
     fireEvent.click(screen.getByTitle("Tambah karakter (window baru)"));
     await waitFor(() => expect(loadCompanions()).toHaveLength(2));
     const selects = screen.getAllByLabelText(/Tugas /);
@@ -41,7 +42,7 @@ describe("MainPanel companions (multi-pet B)", () => {
   });
 
   it("toggle pill suhu/mini tersimpan per-companion", async () => {
-    renderSettings();
+    renderCompanions();
     fireEvent.click(screen.getByTitle("Tambah karakter (window baru)"));
     await waitFor(() => expect(loadCompanions()).toHaveLength(2));
     const boxes = screen.getAllByTitle("Tampilkan pill suhu di pet ini");
@@ -52,7 +53,7 @@ describe("MainPanel companions (multi-pet B)", () => {
   });
 
   it("companion utama tidak bisa dihapus", () => {
-    renderSettings();
+    renderCompanions();
     // Hanya ada tombol trash untuk non-utama; dengan 1 item tidak ada tombol hapus.
     expect(screen.queryByTitle("Tutup window + hapus karakter ini")).toBeNull();
     expect(store.companions.all()).toHaveLength(1);

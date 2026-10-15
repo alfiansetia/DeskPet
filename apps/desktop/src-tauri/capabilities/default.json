@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Pet window + panel + tray. Local only, no FS/network scopes beyond localhost.",
   "windows": ["pet", "pet-*"],
-  "permissions": ["core:default", "core:window:allow-show", "core:window:allow-hide", "core:window:allow-set-always-on-top", "core:window:allow-start-dragging", "core:window:allow-set-position", "core:window:allow-set-size", "core:window:allow-outer-position", "core:window:allow-inner-position", "core:window:allow-set-focus", "core:window:allow-close", "core:tray:default", "core:event:default", "autostart:default"]
+  "permissions": ["core:default", "core:window:allow-show", "core:window:allow-hide", "core:window:allow-set-always-on-top", "core:window:allow-start-dragging", "core:window:allow-set-position", "core:window:allow-set-size", "core:window:allow-outer-position", "core:window:allow-inner-position", "core:window:allow-outer-size", "core:window:allow-scale-factor", "core:window:allow-current-monitor", "core:window:allow-set-focus", "core:window:allow-close", "core:tray:default", "core:event:default", "opener:allow-reveal-item-in-dir", "autostart:default"]
 }

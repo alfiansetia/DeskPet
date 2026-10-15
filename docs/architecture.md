@@ -60,7 +60,7 @@ AI, OAuth, email/calendar, dynamic plugin loading, scheduler daemon, notificatio
   Timer per-window tetap lokal. Cuaca + fetch jadwal hanya primary.
 - **Pill ambient per-pet:** tiap window melukis pill suhu/mini-sholat dari cache
   shared (tanpa network; refresh 60 dtk). Tampil tidaknya diatur per-companion
-  (`showTemp`/`showMini`, default on, via Pengaturan → Kawan desktop); setting
+  (`showTemp`/`showMini`, default on, via tab Kawan); setting
   global (`weatherEnabled`, `tempBubbleEnabled`, `prayerEnabled`,
   `prayerMiniEnabled`) tetap berlaku sebagai master switch. Fetch network +
   toast hujan hanya primary.
@@ -69,7 +69,33 @@ AI, OAuth, email/calendar, dynamic plugin loading, scheduler daemon, notificatio
   tiap pet ganti tidak barengan dan tidak sinkron permanen.
 - **Wander:** tiap window menggerakkan window-nya sendiri (`useWander` +
   `startDelayMs = phaseDelayMsFor(id)` agar tidak gerak sinkron).
-- **Kelola:** Pengaturan → "Kawan desktop" (tambah spesies/warna/role, tampilkan,
+- **Kelola:** tab "Kawan" (tambah spesies/warna/role/ukuran, tampilkan,
   hapus). Web preview: daftar tersimpan, window baru hanya di build desktop.
+- **Restore saat restart:** window utama (`pet`) dibuat dari config; window
+  sekunder dibuka ulang oleh primary saat boot (sekuesial, idempoten —
+  yang sudah ada hanya di-show + fokus). Daftar dari `deskpet:companions`.
 - **Batasan v1:** stat lapar/mood/energi + topi + elusan masih global (shared),
   belum per-companion. localStorage diasumsikan shared antar-window (default Tauri).
+
+## Single shared DB (catatan / timer / pengingat multi-window)
+
+- **Satu sumber kebenaran:** `deskpet.db` (SQLite, WAL) + mirror localStorage
+  (`deskpet:reminders/todos/notes/events/automations`, `deskpet:timer`).
+  Semua window membaca daftar yang SAMA — tidak ada DB / namespace per-window.
+- **`created_by` hanya info display** (migrasi `003_shared.sql`, kolom nullable
+  di `reminders/todos/notes/calendar_events/scheduled_jobs`; frontend
+  `createdBy?: string | null` via `normalizeCreatedBy`). Tidak pernah dipakai
+  sebagai filter kepemilikan / partisi. Data lama tanpa field = `null`, tetap valid.
+- **Yang per-companion:** hanya `species/palette/scale/role/showTemp/showMini`
+  (`deskpet:companions`) + ephemeral animation state (Rust `PetRegistry`).
+- **Live-sync lintas window:** tiap `store.*.save()` memanggil
+  `notifyDataChanged(kind)` (`src/lib/sharedData.ts`) → `CustomEvent` lokal +
+  `storage` event + Tauri event `deskpet://data-changed`. Panel daftar
+  (`Reminders/Tasks/Notes/Calendar/Automations/LogView`) subscribe sehingga
+  tambah/ubah dari window A langsung tampil di window B.
+- **Single-executor (anti-duplikat):** hanya primary (`main`) yang menjalankan
+  tick scheduler pengingat, prayer alert, ringkasan pagi, care decay, fetch
+  network cuaca/jadwal, dan eksekusi timer selesai (`completedTimerEnd` guard).
+  Alert dirutekan ke presenter via `resolvePresenterFor(list, kind)` by `role`
+  (`decor` tidak pernah present) lewat `deskpet://present-alert`. Semua window
+  melukis countdown/badge dari state shared yang sama.

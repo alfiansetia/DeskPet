@@ -5,6 +5,8 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use tauri::{AppHandle, Emitter, Manager};
+
 use crate::pet::PetState;
 
 pub const MAIN_COMPANION_ID: &str = "main";
@@ -96,6 +98,85 @@ impl PetRegistry {
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
     }
+}
+
+/// Serialisasi pembuatan window: WebView2 di Windows tidak suka dua `build()`
+/// berjalan bersamaan — satu per satu, anti-interleave. Dipegang selama
+/// `spawn_companion_window` (yang kini jalan di thread `spawn_blocking`).
+static SPAWN_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+
+/// Build (atau fokuskan bila sudah ada) window untuk satu companion.
+/// Dipakai command `companions_spawn` (async + thread terpisah, lihat
+/// command-nya — JANGAN panggil dari sync command / event handler: deadlock
+/// Windows wry#583). Local-only: tanpa network, tanpa shell. ID divalidasi ketat.
+pub fn spawn_companion_window(app: &AppHandle, id: &str) -> Result<serde_json::Value, String> {
+    if !is_valid_companion_id(id) {
+        return Err("unknown companion id (rejected)".into());
+    }
+    let _spawn_guard = SPAWN_LOCK
+        .get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .map_err(|e| format!("spawn lock poisoned: {e}"))?;
+    let registry_len = app
+        .try_state::<PetRegistry>()
+        .map(|r| r.list().len())
+        .unwrap_or(0);
+    if id != MAIN_COMPANION_ID && registry_len >= MAX_COMPANIONS {
+        return Err("companion limit reached (max 5)".into());
+    }
+    if let Some(reg) = app.try_state::<PetRegistry>() {
+        reg.ensure(id);
+    }
+    let label = window_label_for(id);
+    if let Some(w) = app.get_webview_window(&label) {
+        // show/focus yang gagal JANGAN dibuang diam-diam: itu persis gejala
+        // "klik tampilkan/fokus tapi window ga muncul".
+        w.show().map_err(|e| format!("show {label} failed: {e}"))?;
+        w.set_focus()
+            .map_err(|e| format!("focus {label} failed: {e}"))?;
+        return Ok(serde_json::json!({ "id": id, "label": label, "existed": true }));
+    }
+    // Posisi cascade dari window primary agar tidak menumpuk persis.
+    let offset: i32 = 60 * (app.webview_windows().len() as i32);
+    let (base_x, base_y) = app
+        .get_webview_window("pet")
+        .and_then(|w| w.outer_position().ok())
+        .map(|p| (p.x, p.y))
+        .unwrap_or((200, 200));
+    let pos = ((base_x + offset).max(0) as f64, (base_y + offset).max(0) as f64);
+    crate::applog::info(app, &format!("spawn: building window {label} at {pos:?}"));
+    let win = tauri::WebviewWindowBuilder::new(
+        app,
+        &label,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title(format!("DeskPet {label}"))
+    .inner_size(170.0, 200.0)
+    .min_inner_size(80.0, 80.0)
+    .transparent(true)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(true)
+    .shadow(false)
+    .accept_first_mouse(true)
+    .position(pos.0, pos.1)
+    .build()
+    .map_err(|e| format!("build {label} failed: {e}"))?;
+    crate::applog::info(
+        app,
+        &format!(
+            "spawn: built {label} visible={:?} pos={:?} size={:?} scale={:?}",
+            win.is_visible(),
+            win.outer_position(),
+            win.inner_size(),
+            win.scale_factor(),
+        ),
+    );
+    win.show()
+        .map_err(|e| format!("show {label} failed: {e}"))?;
+    let _ = app.emit("deskpet://companions-changed", "spawn");
+    Ok(serde_json::json!({ "id": id, "label": label, "existed": false }))
 }
 
 #[cfg(test)]

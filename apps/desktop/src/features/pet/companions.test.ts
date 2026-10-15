@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import {
   companionIdFromWindowLabel,
   migrateFromLegacy,
@@ -8,9 +8,15 @@ import {
   resolvePresenterFor,
   slotPeriodJitterMsFor,
   slotPhaseFor,
+  spawnCompanionWindow,
   windowLabelFor,
   type Companion,
 } from "./companions";
+import { invoke } from "@tauri-apps/api/core";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+}));
 
 describe("companions model (multi-pet B)", () => {
   it("window label mapping round-trips", () => {
@@ -84,5 +90,30 @@ describe("companions model (multi-pet B)", () => {
     const d = phaseDelayMsFor("c_abc");
     expect(d).toBeGreaterThanOrEqual(400);
     expect(d).toBeLessThanOrEqual(2800);
+  });
+});
+
+describe("spawnCompanionWindow (timeout guard)", () => {
+  afterEach(() => { vi.mocked(invoke).mockReset(); });
+
+  it("timeout bila backend macet (tidak gantung selamanya)", async () => {
+    vi.mocked(invoke).mockImplementation(() => new Promise(() => {}));
+    const res = await spawnCompanionWindow("c_abc123", 50);
+    expect(res).toEqual({ ok: false, timeout: true });
+  });
+
+  it("ok bila backend menjawab", async () => {
+    vi.mocked(invoke).mockResolvedValue({ id: "c_abc123", label: "pet-c_abc123", existed: false });
+    const res = await spawnCompanionWindow("c_abc123", 1000);
+    expect(res).toEqual({ ok: true, timeout: false, existed: false });
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith("companions_spawn", { id: "c_abc123" });
+  });
+
+  it("gagal cepat bila backend reject", async () => {
+    vi.mocked(invoke).mockRejectedValue(new Error("boom"));
+    const res = await spawnCompanionWindow("c_abc123", 1000);
+    expect(res.ok).toBe(false);
+    expect(res.timeout).toBe(false);
+    expect(res.error).toContain("boom");
   });
 });

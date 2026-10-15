@@ -3,6 +3,7 @@
 //! Local-first: no network, no telemetry, no sensitive actions.
 
 pub mod actions;
+pub mod applog;
 pub mod commands;
 pub mod companions;
 pub mod db;
@@ -29,17 +30,31 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
     // Single tray icon: built here in code (NOT via tauri.conf `trayIcon`,
     // otherwise Tauri auto-creates a second, dead icon next to this one).
-    // Monochrome template glyph so the menu bar stays black-white and
-    // macOS auto-tints it for light/dark mode (no-op on Win/Linux).
+    // Per-platform icon:
+    // - macOS: monochrome template glyph so the menu bar stays black-white
+    //   and auto-tints for light/dark mode.
+    // - Windows/Linux: full-color cat. The template glyph renders there as
+    //   an ugly flat-black blob, so it must NOT be used outside macOS.
+    #[cfg(target_os = "macos")]
+    const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/tray-icon.png");
+    #[cfg(not(target_os = "macos"))]
+    const TRAY_ICON_BYTES: &[u8] = include_bytes!("../icons/64x64.png");
+    #[cfg(target_os = "macos")]
+    const TRAY_ICON_TEMPLATE: bool = true;
+    #[cfg(not(target_os = "macos"))]
+    const TRAY_ICON_TEMPLATE: bool = false;
     let mut tray_builder = TrayIconBuilder::new()
         .menu(&menu)
-        .icon_as_template(true);
-    match tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png")) {
+        .icon_as_template(TRAY_ICON_TEMPLATE);
+    match tauri::image::Image::from_bytes(TRAY_ICON_BYTES) {
         Ok(icon) => {
             tray_builder = tray_builder.icon(icon);
         }
         Err(e) => {
-            eprintln!("[deskpet] tray icon load failed, using app icon: {e}");
+            crate::applog::warn(
+                app,
+                &format!("tray icon load failed, using app icon: {e}"),
+            );
             if let Some(icon) = app.default_window_icon() {
                 tray_builder = tray_builder.icon(icon.clone());
             }
@@ -104,6 +119,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_opener::init())
         .manage(PetVisibility(Mutex::new(true)))
         .manage(CurrentPetState(Mutex::new(PetState::Idle)))
         .manage(PetRegistry::default())
@@ -123,6 +139,8 @@ pub fn run() {
             commands::settings_update,
             commands::frontend_settings_get,
             commands::frontend_settings_put,
+            commands::log_path,
+            commands::log_read,
             commands::prayer_cache_get,
             commands::prayer_cache_put,
             commands::app_health,
@@ -135,12 +153,12 @@ pub fn run() {
             if let Ok(mut dir) = app.path().app_local_data_dir() {
                 dir.push("deskpet.db");
                 if let Err(e) = db::open_and_migrate(&dir) {
-                    eprintln!("[deskpet] db init failed (non-fatal in P1): {e}");
+                    crate::applog::warn(app.handle(), &format!("db init failed (non-fatal in P1): {e}"));
                 }
             }
             if let Err(e) = build_tray(app.handle()) {
                 // Tray unsupported on some Linux/window managers; pet must still work.
-                eprintln!("[deskpet] tray init failed (non-fatal): {e}");
+                crate::applog::warn(app.handle(), &format!("tray init failed (non-fatal): {e}"));
             }
             // Keyboard shortcut path: frontend listens for CmdOrCtrl+Shift+D
             // to toggle visibility; also exposed via tray menu.

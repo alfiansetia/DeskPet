@@ -17,6 +17,34 @@ pub enum DbError {
 /// P1 initial schema + P2–P4 additions (PRD §8 full). Idempotent, ordered.
 pub const MIGRATION_001: &str = include_str!("../../migrations/001_init.sql");
 pub const MIGRATION_002: &str = include_str!("../../migrations/002_actions.sql");
+/// 003: info-only `created_by` columns (single shared DB, multi-window).
+/// NOTE: contains ALTER TABLE ... ADD COLUMN which is NOT re-runnable via
+/// execute_batch — use `apply_migration_003` which ignores duplicate-column.
+pub const MIGRATION_003: &str = include_str!("../../migrations/003_shared.sql");
+
+/// Apply 003 statement-by-statement; `duplicate column name` is OK (re-run).
+fn apply_migration_003(conn: &Connection) -> Result<(), DbError> {
+    for stmt in MIGRATION_003.split(';') {
+        let s = stmt.trim();
+        if s.is_empty() || s.starts_with("--") && !s.contains("ALTER") && !s.contains("INSERT") {
+            // Skip pure-comment chunks; keep statements that embed comments.
+            if !s.to_uppercase().contains("ALTER") && !s.to_uppercase().contains("INSERT") {
+                continue;
+            }
+        }
+        if s.is_empty() {
+            continue;
+        }
+        if let Err(e) = conn.execute_batch(s) {
+            let msg = e.to_string();
+            if msg.contains("duplicate column name") {
+                continue; // idempotent re-run
+            }
+            return Err(DbError::Sqlite(e));
+        }
+    }
+    Ok(())
+}
 
 /// Open (creating parent dirs) and migrate a SQLite file.
 pub fn open_and_migrate(path: &Path) -> Result<Connection, DbError> {
@@ -30,6 +58,7 @@ pub fn open_and_migrate(path: &Path) -> Result<Connection, DbError> {
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     conn.execute_batch(MIGRATION_001)?;
     conn.execute_batch(MIGRATION_002)?;
+    apply_migration_003(&conn)?;
     Ok(conn)
 }
 
@@ -38,6 +67,7 @@ pub fn open_in_memory() -> Result<Connection, DbError> {
     let conn = Connection::open_in_memory()?;
     conn.execute_batch(MIGRATION_001)?;
     conn.execute_batch(MIGRATION_002)?;
+    apply_migration_003(&conn)?;
     Ok(conn)
 }
 
@@ -71,6 +101,35 @@ mod tests {
         let conn = open_in_memory().unwrap();
         conn.execute_batch(MIGRATION_001).expect("re-run must succeed");
         conn.execute_batch(MIGRATION_002).expect("re-run must succeed");
+        apply_migration_003(&conn).expect("003 re-run must succeed");
+        apply_migration_003(&conn).expect("003 double re-run must succeed");
+    }
+
+    #[test]
+    fn shared_db_has_info_only_created_by() {
+        // Single shared DB: created_by ada di semua tabel produktivitas,
+        // nullable, tidak ada filter kepemilikan (tanpa FK / tanpa index parsial).
+        let conn = open_in_memory().unwrap();
+        for table in ["reminders", "todos", "notes", "calendar_events", "scheduled_jobs"] {
+            let cols: Vec<String> = conn
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .unwrap()
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect();
+            assert!(cols.contains(&"created_by".to_string()), "missing created_by in {table}: {cols:?}");
+        }
+        // created_by murni info: insert tanpa created_by tetap valid (global data).
+        conn.execute(
+            "INSERT INTO todos (id, title, status, priority, created_at, updated_at) VALUES ('t-shared','global task','open',0,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        let by: Option<String> = conn
+            .query_row("SELECT created_by FROM todos WHERE id='t-shared'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(by, None);
     }
 
     #[test]
