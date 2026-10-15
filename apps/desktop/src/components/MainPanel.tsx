@@ -16,6 +16,11 @@ import { availableVoices, speak, stopSpeech, ttsSupported } from "../lib/tts";
 import { CAT_PALETTES, CUSTOM_PALETTE_ID } from "../features/pet/palettes";
 import { PET_SPECIES, type PetSpecies } from "../features/pet/species";
 import { HATS, unlockedHats } from "../features/pet/hats";
+import { APP_NAME, APP_TAGLINE, APP_VERSION } from "../lib/appInfo";
+import {
+  checkForUpdates, RELEASES_URL,
+  type UpdateStatus,
+} from "../features/updater/updater";
 import { PrayerView } from "../features/prayer/PrayerView";
 import { AutostartView } from "../features/startup/AutostartView";
 import {
@@ -24,7 +29,7 @@ import {
   type ApiWatchConfig, type TestOutcome,
 } from "../features/apiwatch/apiwatch";
 
-export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "apiwatch" | "companions" | "settings" | "log";
+export type PanelTab = "assistant" | "reminders" | "tasks" | "notes" | "timer" | "calendar" | "prayer" | "auto" | "apiwatch" | "companions" | "settings" | "about" | "log";
 
 interface Props {
   tab: PanelTab;
@@ -49,7 +54,7 @@ const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
   { id: "timer", icon: "timer", title: "Timer" }, { id: "calendar", icon: "calendar", title: "Kalender" },
   { id: "prayer", icon: "moonStar", title: "Jadwal Sholat" },
   { id: "auto", icon: "settings", title: "Otomatisasi" }, { id: "apiwatch", icon: "activity", title: "API Watch" }, { id: "companions", icon: "star", title: "Kawan" },
-  { id: "settings", icon: "sliders", title: "Pengaturan" },
+  { id: "settings", icon: "sliders", title: "Pengaturan" }, { id: "about", icon: "info", title: "Tentang" },
   { id: "log", icon: "history", title: "Log" },
 ];
 
@@ -58,7 +63,7 @@ const TABS: { id: PanelTab; icon: IconName; title: string }[] = [
 const TAB_GROUPS: { id: string; label: string; tabs: PanelTab[] }[] = [
   { id: "kerja", label: "Kerja", tabs: ["assistant", "reminders", "tasks", "notes"] },
   { id: "waktu", label: "Waktu", tabs: ["timer", "calendar", "prayer", "auto", "apiwatch"] },
-  { id: "sistem", label: "Sistem", tabs: ["companions", "settings", "log"] },
+  { id: "sistem", label: "Sistem", tabs: ["companions", "settings", "about", "log"] },
 ];
 
 const TAB_BY_ID = new Map<PanelTab, { id: PanelTab; icon: IconName; title: string }>(
@@ -128,6 +133,7 @@ export function MainPanel(p: Props) {
         {p.tab === "apiwatch" && <ApiWatchView rkey={p.refreshKey} />}
         {p.tab === "companions" && <CompanionsView companions={companions} setCompanions={setCompanions} />}
         {p.tab === "settings" && <SettingsView settings={p.settings} setSettings={p.setSettings} onCare={p.onCare} companions={companions} setCompanions={setCompanions} ownId={p.ownId} />}
+        {p.tab === "about" && <AboutView bump={p.bump} />}
         {p.tab === "log" && <LogView />}
       </div>
     </div>
@@ -880,15 +886,12 @@ function CompanionsView({ companions, setCompanions }: { companions: Companion[]
 
 /* ---------------- Settings ---------------- */
 function SettingsView({ settings, setSettings, onCare, companions, setCompanions, ownId }: { settings: DeskSettings; setSettings: (s: DeskSettings) => void; onCare?: (kind: "feed" | "play") => void; companions: Companion[]; setCompanions: (c: Companion[]) => void; ownId?: string }) {
-  const [savedAt, setSavedAt] = useState<string | null>(null);
   const upd = (patch: Partial<DeskSettings>) => {
     const next = { ...settings, ...patch, telemetryEnabled: false as const };
     saveSettings(next); setSettings(next);
-    setSavedAt(new Date().toLocaleTimeString("id-ID"));
   };
   const [voices, setVoices] = useState<{ name: string; lang: string }[]>([]);
   useEffect(() => { setVoices(availableVoices()); const t = setTimeout(() => setVoices(availableVoices()), 800); return () => clearTimeout(t); }, []);
-  const fileRef = useRef<HTMLInputElement>(null);
   // Pengaturan karakter/warna di sini milik companion PEMILIK WINDOW ini
   // (panel dibuka via double-click pet itu). Window pet merender companion
   // (me.paletteId ?? settings.petPaletteId), jadi tanpa sync ini ganti
@@ -902,19 +905,6 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
     try {
       void Promise.resolve(emit("deskpet://companions-changed", "changed")).catch(() => { /* preview */ });
     } catch { /* preview */ }
-  };
-
-  const doExport = () => {
-    const blob = new Blob([exportBackup()], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `deskpet-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
-    URL.revokeObjectURL(url);
-  };
-  const doImport = async (f: File) => {
-    const txt = await f.text();
-    const r = importBackup(txt);
-    toast(r.ok ? "Backup dipulihkan" : "Gagal impor", r.error, r.ok ? "success" : "error");
   };
 
   return (
@@ -1073,16 +1063,98 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
       </div>
         </div>
       </details>
-      <details className="dp-acc">
-        <summary className="dp-acc-head">Data &amp; tentang</summary>
-        <div className="dp-acc-body">
-      <div className="dp-row"><button className="dp-btn sm" onClick={doExport}><Icon name="download" size={13} /> Backup</button>
-        <button className="dp-btn sm" onClick={() => fileRef.current?.click()}><Icon name="upload" size={13} /> Restore</button>
-        <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); }} /></div>
-      {savedAt && <div className="dp-muted" data-testid="settings-saved"><span className="dp-line"><Icon name="check" size={12} /> Tersimpan {savedAt} (lokal, tanpa cloud)</span></div>}
-      <div className="dp-muted"><span className="dp-line"><Icon name="check" size={12} /> Local-first · telemetry OFF permanen · Gmail/Google opt-in (belum terhubung) · log aktivitas ada di tab Log.</span></div>
+    </div>
+  );
+}
+
+/* ---------------- Tentang: app + backup/restore + cek update ---------------- */
+function AboutView({ bump }: { bump: () => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [checking, setChecking] = useState(false);
+  const [updRes, setUpdRes] = useState<UpdateStatus | null>(null);
+
+  const doExport = () => {
+    const blob = new Blob([exportBackup()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `deskpet-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+    URL.revokeObjectURL(url);
+    toast("Backup diunduh", "Simpan file JSON di tempat aman.", "success");
+  };
+  const doImport = async (f: File) => {
+    const txt = await f.text();
+    const r = importBackup(txt);
+    toast(r.ok ? "Backup dipulihkan" : "Gagal impor", r.error, r.ok ? "success" : "error");
+    if (r.ok) bump();
+  };
+  // Cek update manual ke GitHub (tombol saja, tanpa background network).
+  const doCheck = async () => {
+    setChecking(true);
+    setUpdRes(null);
+    try {
+      setUpdRes(await checkForUpdates(APP_VERSION));
+    } finally {
+      setChecking(false);
+    }
+  };
+  const openReleases = async (url: string) => {
+    try {
+      const mod = await import("@tauri-apps/plugin-opener").catch(() => null);
+      const openUrl = (mod as { openUrl?: (u: string) => Promise<void> } | null)?.openUrl;
+      if (!openUrl) throw new Error("no opener");
+      await openUrl(url);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(url);
+        toast("Link disalin", url, "success");
+      } catch {
+        toast("Buka manual", url, "info");
+      }
+    }
+  };
+  return (
+    <div className="dp-settings">
+      <div className="dp-card" data-testid="about-app">
+        <div><b>{APP_NAME} v{APP_VERSION}</b></div>
+        <div className="dp-muted">{APP_TAGLINE}</div>
+        <div className="dp-muted" style={{ fontSize: 12 }}>Local-first · telemetry OFF permanen · log aktivitas ada di tab Log.</div>
+      </div>
+      <div className="dp-field">
+        <span className="dp-muted">Backup &amp; restore (file JSON di perangkatmu, tanpa cloud)</span>
+        <div className="dp-row">
+          <button className="dp-btn sm" onClick={doExport}><Icon name="download" size={13} /> Backup</button>
+          <button className="dp-btn sm" onClick={() => fileRef.current?.click()}><Icon name="upload" size={13} /> Restore</button>
+          <input ref={fileRef} type="file" accept="application/json" hidden
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void doImport(f); e.target.value = ""; }} aria-label="Pilih file backup" />
         </div>
-      </details>
+      </div>
+      <div className="dp-field">
+        <span className="dp-muted">Update (cek manual ke GitHub, tanpa auto-download)</span>
+        <div className="dp-row">
+          <button className="dp-btn sm" onClick={() => void doCheck()} disabled={checking}>
+            <Icon name="history" size={13} /> {checking ? "Mengecek…" : "Cek update"}
+          </button>
+        </div>
+      </div>
+      {updRes && (
+        <div className="dp-card" data-testid="about-update-result">
+          {updRes.state === "update" ? (
+            <>
+              <div><Icon name="download" size={13} /> <b>Versi baru tersedia: v{updRes.latest.version}</b> (kamu v{updRes.current})</div>
+              {updRes.latest.notes && <div className="dp-muted" style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{updRes.latest.notes}</div>}
+              <div className="dp-row" style={{ marginTop: 6 }}>
+                <button className="dp-btn sm" onClick={() => void openReleases(updRes.latest.url ?? RELEASES_URL)}>
+                  <Icon name="upload" size={13} /> Buka halaman rilis
+                </button>
+              </div>
+            </>
+          ) : updRes.state === "latest" ? (
+            <div><Icon name="checkCircle" size={13} /> Kamu memakai versi terbaru (v{updRes.current}).</div>
+          ) : (
+            <div><Icon name="xCircle" size={13} /> Gagal mengecek update: {updRes.error}</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
