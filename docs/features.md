@@ -33,9 +33,11 @@
 - **Tamagotchi-lite:** lapar/mood/energi meluruh per jam (tidur memulihkan
   energi). Peringatan sekali saat melewati ambang. Kasih makan / ajak main
   via menu / Pengaturan. Mood jelek → mager (berhenti jalan).
-- **Fokus alert:** pengingat/timer/waktu sholat/ringkasan pagi → pet kembali
+- **Fokus alert:** pengingat/timer/waktu sholat/ringkasan pagi/ntfy → pet kembali
   ke tengah layar + membesar sampai dikonfirmasi (klik pet/bubble/toast/Esc).
-  Bisa dimatikan (`centerOnAlert`). Info H-X sholat tidak memindahkan pet.
+  Bisa dimatikan (`centerOnAlert`). Lama nempel diatur via
+  `alertDurationSec` (`0` = sampai diklik, default; atau 60/300/1800/3600 dtk).
+  Info H-X sholat tidak memindahkan pet.
 - **Ukuran pet:** 50–200% via menu (🔍＋/🔍－/↩) atau slider; sprite +
   placeholder ikut skala; arah hadap tetap benar; window Tauri menyesuaikan.
 - **Sembunyi/tampil:** menu → 🙈, tray Show/Hide, atau
@@ -69,6 +71,9 @@ Window membesar 400×620 saat panel terbuka; menu konteks butuh 400×560.
 - Scheduler tick 5 dtk (DB/localStorage = source of truth, bukan timer
   frontend semata). Dedup via `lastTriggeredAt`. Missed-handling setelah
   sleep/restart. Snooze = due baru tanpa menghapus definisi asli.
+- Bubble alert nempel mengikuti `alertDurationSec` (`App.tsx:alertTimeoutMs`):
+  `0` = persistent sampai dikonfirmasi; selain itu auto-close
+  60/300/1800/3600 dtk. Satu setting untuk pengingat, sholat, timer, ntfy.
 - Quiet-hours (default 22–07, bisa diubah/dimatikan).
 - Fallback toast jelas bila izin notifikasi OS ditolak.
 

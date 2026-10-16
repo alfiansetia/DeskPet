@@ -116,7 +116,13 @@ eksekusi otomatis ("butuh konfirmasi manual di panel Integrasi").
 
 ## 8. Kalau ada alert besar (pet membesar + bubble)
 
-Itu **fokus alert**: pengingat/timer/waktu sholat/ringkasan pagi. Cara
+Itu **fokus alert**: pengingat/timer/waktu sholat/ringkasan pagi/ntfy. Cara
 menutup: klik pet, klik bubble, klik toast, atau tekan `Esc`.
 Nonaktifkan perilaku kembali-ke-tengah via Pengaturan → "Kembali ke tengah
 layar saat alert penting" (`centerOnAlert`).
+
+Atur lama bubble nempel via Pengaturan → "Bubble alert hilang"
+(`alertDurationSec`): `Sampai diklik (tak terbatas)` = default, nempel
+terus sampai dikonfirmasi — aman kalau ditinggal sejam; atau pilih
+`1 menit / 5 menit / 30 menit / 1 jam` untuk auto-close. Berlaku untuk
+semua alert (pengingat, sholat masuk waktu + H-X, timer selesai, ntfy).

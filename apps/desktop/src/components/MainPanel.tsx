@@ -1127,6 +1127,26 @@ function SettingsView({ settings, setSettings, onCare, companions, setCompanions
       <label className="dp-check"><input type="checkbox" checked={settings.speechMuted} onChange={(e) => { upd({ speechMuted: e.target.checked }); if (e.target.checked) stopSpeech(); }} /> Bisukan suara (TTS)</label>
       <label className="dp-check"><input type="checkbox" checked={settings.soundMuted} onChange={(e) => upd({ soundMuted: e.target.checked })} /> Bisukan bunyi</label>
       <label className="dp-check"><input type="checkbox" checked={settings.quietHoursEnabled} onChange={(e) => upd({ quietHoursEnabled: e.target.checked })} /> Quiet hours ({settings.quietStart}:00–{settings.quietEnd}:00)</label>
+      <div className="dp-row" style={{ alignItems: "center", margin: 0 }}>
+        <label htmlFor="dp-alert-dur" style={{ minWidth: 110, fontSize: 12 }} className="dp-muted">
+          Bubble alert hilang:
+        </label>
+        <select
+          id="dp-alert-dur"
+          className="dp-in"
+          style={{ padding: "4px 8px", fontSize: 12, flex: 1 }}
+          value={String(settings.alertDurationSec ?? 0)}
+          onChange={(e) => upd({ alertDurationSec: Number(e.target.value) })}
+          title="Berapa lama bubble pengingat/sholat/timer/ntfy nempel sebelum auto-close"
+        >
+          <option value="0">Sampai diklik (tak terbatas)</option>
+          <option value="60">1 menit</option>
+          <option value="300">5 menit</option>
+          <option value="1800">30 menit</option>
+          <option value="3600">1 jam</option>
+        </select>
+      </div>
+      <div className="dp-muted" style={{ fontSize: 12 }}>Pengingat/sholat/timer/ntfy: bubble + pet membesar {(settings.alertDurationSec ?? 0) <= 0 ? "sampai dikonfirmasi." : `auto-close ${Number(settings.alertDurationSec) >= 3600 ? "1 jam" : Number(settings.alertDurationSec) >= 1800 ? "30 mnt" : Number(settings.alertDurationSec) >= 300 ? "5 mnt" : "1 mnt"}.`} Klik pet / bubble / Esc untuk konfirmasi.</div>
       <div className="dp-row">
         <label>TTS: {ttsSupported() ? `${voices.length} suara` : "tidak didukung"}</label>
         <button className="dp-btn sm" onClick={() => speak("Halo, saya DeskPet.", { muted: settings.speechMuted })}>Uji suara</button>

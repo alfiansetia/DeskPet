@@ -51,6 +51,14 @@ import { useWindowHover } from "./lib/useWindowHover";
 const TOAST_ICON: Record<Toast["kind"], IconName> = {
   reminder: "bell", success: "checkCircle", error: "xCircle", info: "info",
 };
+/** Timeout bubble alert (ms). null = nempel sampai dikonfirmasi. */
+export function alertTimeoutMs(s: { alertDurationSec?: number } | null | undefined): number | null {
+  const sec = typeof s?.alertDurationSec === "number" && Number.isFinite(s.alertDurationSec)
+    ? s.alertDurationSec
+    : 0;
+  if (sec <= 0) return null;
+  return Math.min(86400, Math.max(30, Math.round(sec))) * 1000;
+}
 export default function App() {
   const [petState, setPetState] = useState<PetState>("idle");
   const [visible, setVisible] = useState(true);
@@ -229,16 +237,19 @@ export default function App() {
   }, [petState, requestState]);
 
   // Alert lokal: karakter membesar + bubble di atas pet sampai dikonfirmasi.
+  // Durasi mengikuti settings.alertDurationSec (0 = persistent).
   const presentLocalAlert = useCallback((title: string, body: string, icon: IconName) => {
     void requestState("reminder");
     setAlertEnlarged(true);
     setAlertBubble({ title, body, icon });
     maybeCenterPetRef.current();
     toast(title, body, "reminder");
+    const ms = alertTimeoutMs(settingsRef.current);
+    if (ms === null) return;
     setTimeout(() => {
       setAlertBubble((b) => (b?.title === title ? null : b));
       setAlertEnlarged(false);
-    }, 60_000);
+    }, ms);
   }, [requestState]);
 
   // Scheduler terpusat jalan di primary; alert diteruskan ke presenter by role.
@@ -591,10 +602,13 @@ export default function App() {
             if (!settings.speechMuted) speak(`Sudah masuk waktu sholat ${name}.`, { muted: false });
           }
           bump();
-          setTimeout(() => {
-            setAlertBubble((b) => (b?.title.includes(name) ? null : b));
-            setAlertEnlarged(false);
-          }, 60_000);
+          const ms = alertTimeoutMs(settings);
+          if (ms !== null) {
+            setTimeout(() => {
+              setAlertBubble((b) => (b?.title.includes(name) ? null : b));
+              setAlertEnlarged(false);
+            }, ms);
+          }
           return;
         }
       }
@@ -612,10 +626,13 @@ export default function App() {
             if (settings.prayerBubbleEnabled !== false) {
               setAlertBubble({ title: `${up.name} ${timeOf(day, up.name)} · ${Math.ceil(up.diffMs / 60000)} mnt lagi`, body: "Siap-siap yuk — klik untuk konfirmasi.", icon: "moonStar" });
               setAlertEnlarged(true);
-              setTimeout(() => {
-                setAlertBubble((b) => (b?.title.includes(up.name) ? null : b));
-                setAlertEnlarged(false);
-              }, 45_000);
+              const preMs = alertTimeoutMs(settings);
+              if (preMs !== null) {
+                setTimeout(() => {
+                  setAlertBubble((b) => (b?.title.includes(up.name) ? null : b));
+                  setAlertEnlarged(false);
+                }, preMs);
+              }
             }
             toast(`${up.name} sebentar lagi`, `${timeOf(day, up.name)} · ${cityName}`, "info");
           }
@@ -634,7 +651,7 @@ export default function App() {
     const slow = setInterval(() => void check(), 15_000);
     return () => { cancelled = true; clearInterval(fast); clearInterval(slow); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.prayerEnabled, isPrimary, routeOrPresent, settings.prayerCityId, settings.prayerCityName, settings.prayerAdzanEnabled, settings.prayerBubbleEnabled, settings.prayerReminderMins, settings.quietHoursEnabled, settings.quietStart, settings.quietEnd, settings.soundMuted, settings.speechMuted]);
+  }, [settings.prayerEnabled, isPrimary, routeOrPresent, settings.prayerCityId, settings.prayerCityName, settings.prayerAdzanEnabled, settings.prayerBubbleEnabled, settings.prayerReminderMins, settings.quietHoursEnabled, settings.quietStart, settings.quietEnd, settings.soundMuted, settings.speechMuted, settings.alertDurationSec]);
   // API Watch via ntfy (opt-in, PRD §5.7 external-read): listen SSE topic.
   // Backend cukup POST ke topic itu. HANYA primary yang subscribe
   // (anti-duplikat multi-window). Tiap pesan dicatat ke file log

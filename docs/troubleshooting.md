@@ -42,6 +42,9 @@
   quiet-hours, dan `lastTriggeredAt` (dedup mencegah bunyi ganda).
 - Setelah sleep/restart: missed-handling menandai yang terlewat — buka tab
   Pengingat untuk melihatnya.
+- Bubble hilang terlalu cepat? Atur Pengaturan → "Bubble alert hilang"
+  (`alertDurationSec`). Default `0` = nempel sampai diklik; kalau diset
+  1 mnt / 5 mnt / 30 mnt / 1 jam, bubble auto-close setelah durasi itu.
 
 ## Timer "ga work" / countdown beda antar-window
 

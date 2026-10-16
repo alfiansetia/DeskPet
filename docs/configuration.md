@@ -34,6 +34,7 @@ backend (file app-data via `frontend_settings_get/put`).
 | `timerBadgeEnabled` | `true` | Badge countdown timer di atas pet |
 | `timerDoneAlertEnabled` | `true` | Alert saat timer selesai (`false` = diam-diam) |
 | `centerOnAlert` | `true` | Kembali ke tengah layar saat alert penting |
+| `alertDurationSec` | `0` | Lama bubble alert nempel: `0` = sampai diklik; `60/300/1800/3600` = 1 mnt / 5 mnt / 30 mnt / 1 jam. Berlaku untuk pengingat + sholat + timer + ntfy |
 | `autoStart` | `false` | Jalankan saat login OS |
 | `weatherEnabled` | `true` | Master cuaca Open-Meteo |
 | `tempBubbleEnabled` | `true` | Pill suhu |
